@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from nlboot.verify import VerificationError, load_trusted_keys
+from nlboot import verify
+from nlboot.verify import VerificationError, load_trusted_keys, load_verified_trust_bundle
 
 PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArBfEOS4UzauNLkcJB/JY
@@ -29,6 +30,21 @@ def key_doc(**overrides: object) -> dict[str, object]:
     }
     key.update(overrides)
     return {"keys": [key]}
+
+
+def trust_bundle(**overrides: object) -> dict[str, object]:
+    bundle = key_doc()
+    bundle.update(
+        {
+            "bundle_id": "urn:srcos:trust-bundle:m2-demo-2026-04-26",
+            "signer_ref": "urn:srcos:key:sourceos-release-root",
+            "signature_algorithm": "rsa-pss-sha256",
+            "crypto_profile": "fips-140-3-compatible",
+            "signature_hex": "00",
+        }
+    )
+    bundle.update(overrides)
+    return bundle
 
 
 def now() -> datetime:
@@ -65,3 +81,37 @@ def test_revoked_key_rejected():
             ),
             now=now(),
         )
+
+
+def test_signed_trust_bundle_loads_after_root_verification(monkeypatch: pytest.MonkeyPatch):
+    calls: list[bytes] = []
+
+    def fake_verify(*, payload: bytes, signature_hex: str, trusted_key: object) -> None:
+        calls.append(payload)
+        assert signature_hex == "00"
+
+    root_keys = load_trusted_keys(key_doc(), now=now())
+    monkeypatch.setattr(verify, "verify_rsa_pss_sha256", fake_verify)
+    keys = load_verified_trust_bundle(trust_bundle(), root_keys=root_keys, now=now())
+    assert "urn:srcos:key:sourceos-release-root" in keys
+    assert calls == [verify.canonical_trust_bundle_payload(trust_bundle())]
+
+
+def test_signed_trust_bundle_requires_root_signer():
+    with pytest.raises(VerificationError, match="no trusted root key"):
+        load_verified_trust_bundle(trust_bundle(signer_ref="urn:srcos:key:missing"), root_keys={}, now=now())
+
+
+def test_signed_trust_bundle_rejects_non_fips_algorithm():
+    root_keys = load_trusted_keys(key_doc(), now=now())
+    with pytest.raises(VerificationError, match="signature_algorithm"):
+        load_verified_trust_bundle(trust_bundle(signature_algorithm="ed25519"), root_keys=root_keys, now=now())
+
+
+def test_signed_trust_bundle_rejects_revoked_root():
+    root_keys = load_trusted_keys(key_doc(), now=now())
+    revoked_root = key_doc(status="revoked", revoked_at="2026-04-20T00:00:00Z")
+    root_keys["urn:srcos:key:sourceos-release-root"] = load_trusted_keys(key_doc(), now=now())["urn:srcos:key:sourceos-release-root"]
+    bundle = trust_bundle(keys=revoked_root["keys"])
+    with pytest.raises(VerificationError, match="revoked"):
+        load_verified_trust_bundle(bundle, root_keys=root_keys, now=now())
