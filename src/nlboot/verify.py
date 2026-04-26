@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
@@ -10,10 +11,21 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 FIPS_READY_ALGORITHM = "rsa-pss-sha256"
 FIPS_READY_PROFILE = "fips-140-3-compatible"
+ACTIVE_KEY_STATUS = "active"
 
 
 class VerificationError(ValueError):
     """Raised when a signature or trusted-key check fails."""
+
+
+def _parse_time(value: str, *, field: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise VerificationError(f"{field} must be an ISO-8601 datetime") from exc
+    if parsed.tzinfo is None:
+        raise VerificationError(f"{field} must include timezone information")
+    return parsed.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -21,22 +33,56 @@ class TrustedKey:
     key_ref: str
     algorithm: str
     public_key_pem: str
+    status: str
+    not_before: datetime | None
+    not_after: datetime | None
+    revoked_at: datetime | None
+    revocation_reason: str | None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TrustedKey":
         key_ref = data.get("key_ref")
         algorithm = data.get("algorithm")
         public_key_pem = data.get("public_key_pem")
+        status = data.get("status", ACTIVE_KEY_STATUS)
         if not isinstance(key_ref, str) or not key_ref:
             raise VerificationError("trusted key requires key_ref")
         if algorithm != FIPS_READY_ALGORITHM:
             raise VerificationError("trusted key must use rsa-pss-sha256")
         if not isinstance(public_key_pem, str) or "BEGIN PUBLIC KEY" not in public_key_pem:
             raise VerificationError("trusted key requires PEM public key")
-        return cls(key_ref=key_ref, algorithm=algorithm, public_key_pem=public_key_pem)
+        if status not in {"active", "retired", "revoked"}:
+            raise VerificationError("trusted key status must be active, retired, or revoked")
+        not_before_raw = data.get("not_before")
+        not_after_raw = data.get("not_after")
+        revoked_at_raw = data.get("revoked_at")
+        revocation_reason = data.get("revocation_reason")
+        if revocation_reason is not None and not isinstance(revocation_reason, str):
+            raise VerificationError("revocation_reason must be string when present")
+        return cls(
+            key_ref=key_ref,
+            algorithm=algorithm,
+            public_key_pem=public_key_pem,
+            status=status,
+            not_before=_parse_time(not_before_raw, field="not_before") if isinstance(not_before_raw, str) else None,
+            not_after=_parse_time(not_after_raw, field="not_after") if isinstance(not_after_raw, str) else None,
+            revoked_at=_parse_time(revoked_at_raw, field="revoked_at") if isinstance(revoked_at_raw, str) else None,
+            revocation_reason=revocation_reason,
+        )
+
+    def validate_lifecycle(self, *, now: datetime | None = None) -> None:
+        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        if self.status == "revoked" or self.revoked_at is not None:
+            raise VerificationError(f"trusted key {self.key_ref!r} is revoked")
+        if self.status != ACTIVE_KEY_STATUS:
+            raise VerificationError(f"trusted key {self.key_ref!r} is not active")
+        if self.not_before and current < self.not_before:
+            raise VerificationError(f"trusted key {self.key_ref!r} is not active yet")
+        if self.not_after and current >= self.not_after:
+            raise VerificationError(f"trusted key {self.key_ref!r} is expired")
 
 
-def load_trusted_keys(data: dict[str, Any]) -> dict[str, TrustedKey]:
+def load_trusted_keys(data: dict[str, Any], *, now: datetime | None = None) -> dict[str, TrustedKey]:
     keys = data.get("keys")
     if not isinstance(keys, list):
         raise VerificationError("trusted key document requires keys array")
@@ -45,6 +91,7 @@ def load_trusted_keys(data: dict[str, Any]) -> dict[str, TrustedKey]:
         if not isinstance(item, dict):
             raise VerificationError("trusted key entries must be objects")
         key = TrustedKey.from_dict(item)
+        key.validate_lifecycle(now=now)
         loaded[key.key_ref] = key
     return loaded
 
