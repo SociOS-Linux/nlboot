@@ -82,22 +82,13 @@ class TrustedKey:
             raise VerificationError(f"trusted key {self.key_ref!r} is expired")
 
 
-def load_trusted_keys(data: dict[str, Any], *, now: datetime | None = None) -> dict[str, TrustedKey]:
-    keys = data.get("keys")
-    if not isinstance(keys, list):
-        raise VerificationError("trusted key document requires keys array")
-    loaded: dict[str, TrustedKey] = {}
-    for item in keys:
-        if not isinstance(item, dict):
-            raise VerificationError("trusted key entries must be objects")
-        key = TrustedKey.from_dict(item)
-        key.validate_lifecycle(now=now)
-        loaded[key.key_ref] = key
-    return loaded
-
-
 def canonical_payload(data: dict[str, Any]) -> bytes:
     unsigned = {k: v for k, v in data.items() if k != "signature_hex"}
+    return json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def canonical_trust_bundle_payload(data: dict[str, Any]) -> bytes:
+    unsigned = {k: v for k, v in data.items() if k not in {"signature_hex", "signatures"}}
     return json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -120,3 +111,47 @@ def verify_rsa_pss_sha256(*, payload: bytes, signature_hex: str, trusted_key: Tr
         )
     except InvalidSignature as exc:
         raise VerificationError("signature verification failed") from exc
+
+
+def load_trusted_keys(data: dict[str, Any], *, now: datetime | None = None) -> dict[str, TrustedKey]:
+    keys = data.get("keys")
+    if not isinstance(keys, list):
+        raise VerificationError("trusted key document requires keys array")
+    loaded: dict[str, TrustedKey] = {}
+    for item in keys:
+        if not isinstance(item, dict):
+            raise VerificationError("trusted key entries must be objects")
+        key = TrustedKey.from_dict(item)
+        key.validate_lifecycle(now=now)
+        loaded[key.key_ref] = key
+    return loaded
+
+
+def load_verified_trust_bundle(
+    data: dict[str, Any], *, root_keys: dict[str, TrustedKey], now: datetime | None = None
+) -> dict[str, TrustedKey]:
+    bundle_id = data.get("bundle_id")
+    signer_ref = data.get("signer_ref")
+    signature_hex = data.get("signature_hex")
+    algorithm = data.get("signature_algorithm")
+    crypto_profile = data.get("crypto_profile")
+    if not isinstance(bundle_id, str) or not bundle_id:
+        raise VerificationError("trust bundle requires bundle_id")
+    if not isinstance(signer_ref, str) or not signer_ref:
+        raise VerificationError("trust bundle requires signer_ref")
+    if not isinstance(signature_hex, str) or not signature_hex:
+        raise VerificationError("trust bundle requires signature_hex")
+    if algorithm != FIPS_READY_ALGORITHM:
+        raise VerificationError("trust bundle signature_algorithm must be rsa-pss-sha256")
+    if crypto_profile != FIPS_READY_PROFILE:
+        raise VerificationError("trust bundle crypto_profile must be fips-140-3-compatible")
+    signer = root_keys.get(signer_ref)
+    if signer is None:
+        raise VerificationError(f"no trusted root key for signer_ref={signer_ref!r}")
+    signer.validate_lifecycle(now=now)
+    verify_rsa_pss_sha256(
+        payload=canonical_trust_bundle_payload(data),
+        signature_hex=signature_hex,
+        trusted_key=signer,
+    )
+    return load_trusted_keys(data, now=now)
