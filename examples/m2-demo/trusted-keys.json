@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "key_ref": "urn:srcos:key:sourceos-demo-signing-key-v0",
+      "algorithm": "rsa-pss-sha256",
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvQjwCweO/3NxqmTSB3Vq\nYyDRFh2SkRT27ddqScUp1pD2l2wiCjAnAjwZf2mM9AfHH3Ur/qrzsmxB+bBs7nXB\nZT/xVSiUWGlB5/XogjpeHbH0SSr9u8O78AqlS3n7IO9tmEr2zIEG8MsLcGaxYYaQ\nK/2mS3QR+HHfsx+9eIKTUow38ewCnQ+ws4h2uL8TmJoJRcBFOM8fVM8J+gkMa/U5\nq+HGGh+F1apJGnrJQqYQ8CTU9EG/c71uRWABi1CzvOs6d4fz8wrvYFR+/xY9te/N\nQpxN2D3ZMlAmzD2HJ+K7zlr+VTIyzhW0EKQy5F+YHZHww8h0g7fXT+yeoxuR0mr7\nQwIDAQAB\n-----END PUBLIC KEY-----\n",
+      "status": "active",
+      "not_before": "2026-04-26T00:00:00Z",
+      "not_after": "2027-04-26T00:00:00Z"
+    }
+  ]
+}
