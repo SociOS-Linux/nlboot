@@ -7,6 +7,7 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 ## What this slice does
 
 - validates signed-boot-manifest-shaped objects before planning boot/recovery
+- verifies RSA-PSS/SHA-256 manifest signatures against a trusted-key document
 - validates one-time enrollment token intent, expiry, audience, and release/boot-release binding
 - produces a boot plan as JSON
 - records `execute=false` in produced plans
@@ -25,6 +26,9 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 - `artifacts.rootfs_ref`
 - `signature_ref` using `urn:srcos:signature:*`
 - `signer_ref`
+- `signature_algorithm`: `rsa-pss-sha256`
+- `crypto_profile`: `fips-140-3-compatible`
+- `signature_hex`: RSA-PSS/SHA-256 signature over the canonical unsigned manifest payload
 
 `EnrollmentToken` requires:
 
@@ -35,11 +39,24 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 - matching `boot_release_set_ref`
 - purpose compatible with the boot mode
 
-## Usage
+## M2 demo fixture
+
+The repository carries a side-effect-free M2 recovery fixture under `examples/m2-demo/`:
+
+- `manifest.recovery.json`
+- `enrollment-token.recovery.json`
+- `trusted-keys.json`
+
+Run it through the planner:
 
 ```bash
 python3 -m pip install -e .
-nlboot-plan --manifest manifest.json --token token.json
+nlboot-plan \
+  --manifest examples/m2-demo/manifest.recovery.json \
+  --token examples/m2-demo/enrollment-token.recovery.json \
+  --trusted-keys examples/m2-demo/trusted-keys.json \
+  --require-fips \
+  --now 2026-04-26T14:35:00Z
 ```
 
 The command emits a safe plan only. Later implementation tranches can add verified artifact fetching and host execution behind explicit policy gates.
@@ -49,3 +66,5 @@ The command emits a safe plan only. Later implementation tranches can add verifi
 ```bash
 make validate
 ```
+
+The GitHub Actions validation lane runs `make validate` and a CLI smoke over the M2 fixture.
