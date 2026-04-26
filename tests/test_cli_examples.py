@@ -21,6 +21,9 @@ def test_cli_examples_emit_safe_recovery_plan():
             str(root / "examples" / "signed_boot_manifest.recovery.json"),
             "--token",
             str(root / "examples" / "enrollment_token.recovery.json"),
+            "--trusted-keys",
+            str(root / "examples" / "trusted_keys.recovery.json"),
+            "--require-fips",
             "--now",
             "2026-04-26T14:35:00Z",
         ],
@@ -37,3 +40,5 @@ def test_cli_examples_emit_safe_recovery_plan():
     assert plan["execute"] is False
     assert plan["boot_release_set_id"] == "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26"
     assert plan["release_set_ref"] == "urn:srcos:release-set:m2-demo-2026-04-26"
+    assert plan["signature_algorithm"] == "rsa-pss-sha256"
+    assert plan["crypto_profile"] == "fips-140-3-compatible"
