@@ -7,6 +7,10 @@ from typing import Any, Literal
 BootMode = Literal["installer", "recovery", "ephemeral", "bootstrap"]
 TokenPurpose = Literal["enroll", "boot", "repair", "recovery"]
 PlanAction = Literal["present-menu", "boot-recovery", "boot-installer", "boot-ephemeral", "bootstrap-only"]
+SignatureAlgorithm = Literal["rsa-pss-sha256"]
+CryptoProfile = Literal["fips-140-3-compatible"]
+FIPS_READY_ALGORITHM = "rsa-pss-sha256"
+FIPS_READY_PROFILE = "fips-140-3-compatible"
 
 
 class NlbootError(ValueError):
@@ -33,11 +37,10 @@ def _parse_time(value: str, *, key: str) -> datetime:
 
 @dataclass(frozen=True)
 class SignedBootManifest:
-    """Signed-boot-manifest-shaped contract used by the safe planner.
+    """FIPS-ready signed boot manifest contract used by the safe planner.
 
-    The reference implementation validates intent and shape only. It does not perform cryptographic
-    verification in this slice. Signature fields are still required so a future verifier can replace
-    the placeholder check without changing the protocol object.
+    The protocol requires RSA-PSS/SHA-256 metadata and an explicit FIPS-ready profile. Full FIPS
+    compliance still depends on executing cryptography in a validated runtime module.
     """
 
     manifest_id: str
@@ -47,6 +50,9 @@ class SignedBootManifest:
     artifacts: dict[str, str]
     signature_ref: str
     signer_ref: str
+    signature_algorithm: SignatureAlgorithm
+    crypto_profile: CryptoProfile
+    signature_hex: str
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SignedBootManifest":
@@ -55,6 +61,13 @@ class SignedBootManifest:
         base_release_set_ref = _require_string(data, "base_release_set_ref")
         signature_ref = _require_string(data, "signature_ref")
         signer_ref = _require_string(data, "signer_ref")
+        signature_algorithm = _require_string(data, "signature_algorithm")
+        crypto_profile = _require_string(data, "crypto_profile")
+        signature_hex = _require_string(data, "signature_hex")
+        if signature_algorithm != FIPS_READY_ALGORITHM:
+            raise NlbootError("signature_algorithm must be rsa-pss-sha256")
+        if crypto_profile != FIPS_READY_PROFILE:
+            raise NlbootError("crypto_profile must be fips-140-3-compatible")
         boot_mode = _require_string(data, "boot_mode")
         if boot_mode not in {"installer", "recovery", "ephemeral", "bootstrap"}:
             raise NlbootError(f"unsupported boot_mode={boot_mode!r}")
@@ -75,6 +88,9 @@ class SignedBootManifest:
             artifacts={k: str(v) for k, v in artifacts.items()},
             signature_ref=signature_ref,
             signer_ref=signer_ref,
+            signature_algorithm=signature_algorithm,  # type: ignore[arg-type]
+            crypto_profile=crypto_profile,  # type: ignore[arg-type]
+            signature_hex=signature_hex,
         )
 
 
@@ -155,6 +171,8 @@ class BootPlan:
     release_set_ref: str
     artifacts: dict[str, str]
     authorized_by: str
+    signature_algorithm: str
+    crypto_profile: str
     execute: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -165,6 +183,8 @@ class BootPlan:
             "release_set_ref": self.release_set_ref,
             "artifacts": self.artifacts,
             "authorized_by": self.authorized_by,
+            "signature_algorithm": self.signature_algorithm,
+            "crypto_profile": self.crypto_profile,
             "execute": self.execute,
         }
 
@@ -184,5 +204,7 @@ def build_boot_plan(manifest: SignedBootManifest, token: EnrollmentToken, *, now
         release_set_ref=manifest.base_release_set_ref,
         artifacts=manifest.artifacts,
         authorized_by=token.token_id,
+        signature_algorithm=manifest.signature_algorithm,
+        crypto_profile=manifest.crypto_profile,
         execute=False,
     )

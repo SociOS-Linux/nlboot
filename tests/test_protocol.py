@@ -19,6 +19,9 @@ MANIFEST = {
     },
     "signature_ref": "urn:srcos:signature:m2-demo-recovery",
     "signer_ref": "urn:srcos:key:sourceos-release-root",
+    "signature_algorithm": "rsa-pss-sha256",
+    "crypto_profile": "fips-140-3-compatible",
+    "signature_hex": "00",
 }
 
 TOKEN = {
@@ -42,6 +45,8 @@ def test_builds_safe_recovery_plan():
     assert plan.execute is False
     assert plan.boot_release_set_id == MANIFEST["boot_release_set_id"]
     assert plan.authorized_by == TOKEN["token_id"]
+    assert plan.signature_algorithm == "rsa-pss-sha256"
+    assert plan.crypto_profile == "fips-140-3-compatible"
 
 
 def test_expired_token_rejected():
@@ -74,3 +79,17 @@ def test_wrong_purpose_for_recovery_rejected():
     token = EnrollmentToken.from_dict(bad)
     with pytest.raises(NlbootError, match="purpose"):
         build_boot_plan(manifest, token, now=datetime(2026, 4, 26, 14, 35, tzinfo=timezone.utc))
+
+
+def test_non_fips_ready_algorithm_rejected():
+    bad = dict(MANIFEST)
+    bad["signature_algorithm"] = "ed25519"
+    with pytest.raises(NlbootError, match="rsa-pss-sha256"):
+        SignedBootManifest.from_dict(bad)
+
+
+def test_non_fips_ready_profile_rejected():
+    bad = dict(MANIFEST)
+    bad["crypto_profile"] = "standard"
+    with pytest.raises(NlbootError, match="fips-140-3-compatible"):
+        SignedBootManifest.from_dict(bad)
