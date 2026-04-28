@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 
 import pytest
@@ -37,6 +38,37 @@ TOKEN = {
 }
 
 
+def manifest_with_boot_menu() -> dict[str, object]:
+    manifest = deepcopy(MANIFEST)
+    manifest["boot_menu"] = {
+        "menu_id": "urn:srcos:boot-menu:m2-demo",
+        "default_entry_id": "sourceos-recovery-current",
+        "entries": [
+            {
+                "entry_id": "sourceos-recovery-current",
+                "label": "SourceOS Recovery — current",
+                "boot_release_set_id": "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26",
+                "release_set_ref": "urn:srcos:release-set:m2-demo-2026-04-26",
+                "boot_mode": "recovery",
+                "role": "recovery",
+                "default": True,
+                "rollback_eligible": False,
+            },
+            {
+                "entry_id": "sourceos-recovery-previous",
+                "label": "SourceOS Recovery — previous known good",
+                "boot_release_set_id": "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-25",
+                "release_set_ref": "urn:srcos:release-set:m2-demo-2026-04-25",
+                "boot_mode": "recovery",
+                "role": "rollback",
+                "default": False,
+                "rollback_eligible": True,
+            },
+        ],
+    }
+    return manifest
+
+
 def test_builds_safe_recovery_plan():
     manifest = SignedBootManifest.from_dict(MANIFEST)
     token = EnrollmentToken.from_dict(TOKEN)
@@ -47,6 +79,50 @@ def test_builds_safe_recovery_plan():
     assert plan.authorized_by == TOKEN["token_id"]
     assert plan.signature_algorithm == "rsa-pss-sha256"
     assert plan.crypto_profile == "fips-140-3-compatible"
+
+
+def test_builds_safe_recovery_plan_with_boot_menu():
+    manifest = SignedBootManifest.from_dict(manifest_with_boot_menu())
+    token = EnrollmentToken.from_dict(TOKEN)
+    plan = build_boot_plan(manifest, token, now=datetime(2026, 4, 26, 14, 35, tzinfo=timezone.utc))
+    plan_doc = plan.to_dict()
+    assert plan.execute is False
+    assert plan.selected_entry_id == "sourceos-recovery-current"
+    assert plan_doc["boot_menu"]["default_entry_id"] == "sourceos-recovery-current"
+    assert "boot-menu-bound-when-present" in plan_doc["required_proofs"]
+
+
+def test_boot_menu_default_must_match_manifest():
+    bad = manifest_with_boot_menu()
+    bad_menu = bad["boot_menu"]
+    assert isinstance(bad_menu, dict)
+    bad_entries = bad_menu["entries"]
+    assert isinstance(bad_entries, list)
+    bad_entries[0]["boot_release_set_id"] = "urn:srcos:boot-release-set:other"
+    with pytest.raises(NlbootError, match="default entry"):
+        SignedBootManifest.from_dict(bad)
+
+
+def test_boot_menu_rejects_duplicate_entry_ids():
+    bad = manifest_with_boot_menu()
+    bad_menu = bad["boot_menu"]
+    assert isinstance(bad_menu, dict)
+    bad_entries = bad_menu["entries"]
+    assert isinstance(bad_entries, list)
+    bad_entries[1]["entry_id"] = bad_entries[0]["entry_id"]
+    with pytest.raises(NlbootError, match="duplicate"):
+        SignedBootManifest.from_dict(bad)
+
+
+def test_rollback_entry_must_be_rollback_eligible():
+    bad = manifest_with_boot_menu()
+    bad_menu = bad["boot_menu"]
+    assert isinstance(bad_menu, dict)
+    bad_entries = bad_menu["entries"]
+    assert isinstance(bad_entries, list)
+    bad_entries[1]["rollback_eligible"] = False
+    with pytest.raises(NlbootError, match="rollback_eligible"):
+        SignedBootManifest.from_dict(bad)
 
 
 def test_expired_token_rejected():
