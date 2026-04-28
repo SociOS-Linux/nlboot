@@ -7,6 +7,7 @@ from typing import Any, Literal
 BootMode = Literal["installer", "recovery", "ephemeral", "bootstrap"]
 TokenPurpose = Literal["enroll", "boot", "repair", "recovery"]
 PlanAction = Literal["present-menu", "boot-recovery", "boot-installer", "boot-ephemeral", "bootstrap-only"]
+BootEntryRole = Literal["normal", "recovery", "installer", "rollback", "ephemeral", "bootstrap"]
 SignatureAlgorithm = Literal["rsa-pss-sha256"]
 CryptoProfile = Literal["fips-140-3-compatible"]
 FIPS_READY_ALGORITHM = "rsa-pss-sha256"
@@ -36,6 +37,135 @@ def _parse_time(value: str, *, key: str) -> datetime:
 
 
 @dataclass(frozen=True)
+class BootMenuEntry:
+    """A boot-picker-safe menu entry carried inside a signed boot manifest.
+
+    The entry is descriptive and planning-only in this tranche. It names a boot release,
+    links it to the release set it operates against, and records whether it is intended
+    as the default or as a rollback target. Executing the entry remains outside this safe
+    reference slice.
+    """
+
+    entry_id: str
+    label: str
+    boot_release_set_id: str
+    release_set_ref: str
+    boot_mode: BootMode
+    role: BootEntryRole
+    default: bool = False
+    rollback_eligible: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BootMenuEntry":
+        entry_id = _require_string(data, "entry_id")
+        label = _require_string(data, "label")
+        boot_release_set_id = _require_string(data, "boot_release_set_id")
+        release_set_ref = _require_string(data, "release_set_ref")
+        boot_mode = _require_string(data, "boot_mode")
+        if boot_mode not in {"installer", "recovery", "ephemeral", "bootstrap"}:
+            raise NlbootError(f"unsupported boot_menu entry boot_mode={boot_mode!r}")
+        role = _require_string(data, "role")
+        if role not in {"normal", "recovery", "installer", "rollback", "ephemeral", "bootstrap"}:
+            raise NlbootError(f"unsupported boot_menu entry role={role!r}")
+        default = data.get("default", False)
+        if not isinstance(default, bool):
+            raise NlbootError("boot_menu entry default must be boolean")
+        rollback_eligible = data.get("rollback_eligible", False)
+        if not isinstance(rollback_eligible, bool):
+            raise NlbootError("boot_menu entry rollback_eligible must be boolean")
+        if role == "rollback" and rollback_eligible is not True:
+            raise NlbootError("boot_menu rollback entries must be rollback_eligible")
+        return cls(
+            entry_id=entry_id,
+            label=label,
+            boot_release_set_id=boot_release_set_id,
+            release_set_ref=release_set_ref,
+            boot_mode=boot_mode,  # type: ignore[arg-type]
+            role=role,  # type: ignore[arg-type]
+            default=default,
+            rollback_eligible=rollback_eligible,
+        )
+
+    def matches_manifest(self, manifest: "SignedBootManifest") -> bool:
+        return (
+            self.boot_release_set_id == manifest.boot_release_set_id
+            and self.release_set_ref == manifest.base_release_set_ref
+            and self.boot_mode == manifest.boot_mode
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "entry_id": self.entry_id,
+            "label": self.label,
+            "boot_release_set_id": self.boot_release_set_id,
+            "release_set_ref": self.release_set_ref,
+            "boot_mode": self.boot_mode,
+            "role": self.role,
+            "default": self.default,
+            "rollback_eligible": self.rollback_eligible,
+        }
+
+
+@dataclass(frozen=True)
+class BootMenu:
+    """Signed boot menu contract for recovery and rollback parity.
+
+    On Apple Silicon this models the SourceOS entries we want surfaced through the
+    Asahi-compatible boot-picker path. On UEFI/PXE-style targets it models the same
+    logical menu served over secure network boot. The menu is deliberately inside the
+    signed manifest payload so UI choices and rollback targets are tamper-evident.
+    """
+
+    menu_id: str
+    default_entry_id: str
+    entries: tuple[BootMenuEntry, ...]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BootMenu":
+        menu_id = _require_string(data, "menu_id")
+        default_entry_id = _require_string(data, "default_entry_id")
+        entries_raw = data.get("entries")
+        if not isinstance(entries_raw, list) or not entries_raw:
+            raise NlbootError("boot_menu entries must be a non-empty array")
+        entries: list[BootMenuEntry] = []
+        seen: set[str] = set()
+        for item in entries_raw:
+            if not isinstance(item, dict):
+                raise NlbootError("boot_menu entries must be objects")
+            entry = BootMenuEntry.from_dict(item)
+            if entry.entry_id in seen:
+                raise NlbootError(f"duplicate boot_menu entry_id={entry.entry_id!r}")
+            seen.add(entry.entry_id)
+            entries.append(entry)
+        if default_entry_id not in seen:
+            raise NlbootError("boot_menu default_entry_id must reference an entry")
+        marked_default = [entry.entry_id for entry in entries if entry.default]
+        if len(marked_default) > 1:
+            raise NlbootError("boot_menu must not mark more than one entry as default")
+        if marked_default and marked_default[0] != default_entry_id:
+            raise NlbootError("boot_menu marked default must match default_entry_id")
+        return cls(menu_id=menu_id, default_entry_id=default_entry_id, entries=tuple(entries))
+
+    def default_entry(self) -> BootMenuEntry:
+        for entry in self.entries:
+            if entry.entry_id == self.default_entry_id:
+                return entry
+        raise NlbootError("boot_menu default entry is missing")
+
+    def validate_for_manifest(self, manifest: "SignedBootManifest") -> None:
+        default = self.default_entry()
+        if not default.matches_manifest(manifest):
+            raise NlbootError("boot_menu default entry must match manifest boot release and mode")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "menu_id": self.menu_id,
+            "default_entry_id": self.default_entry_id,
+            "entries": [entry.to_dict() for entry in self.entries],
+        }
+
+
+@dataclass(frozen=True)
 class SignedBootManifest:
     """FIPS-ready signed boot manifest contract used by the safe planner.
 
@@ -53,6 +183,7 @@ class SignedBootManifest:
     signature_algorithm: SignatureAlgorithm
     crypto_profile: CryptoProfile
     signature_hex: str
+    boot_menu: BootMenu | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SignedBootManifest":
@@ -80,7 +211,11 @@ class SignedBootManifest:
             raise NlbootError("artifacts missing required refs: " + ", ".join(missing))
         if not signature_ref.startswith("urn:srcos:signature:"):
             raise NlbootError("signature_ref must be a SourceOS signature URN")
-        return cls(
+        boot_menu_doc = data.get("boot_menu")
+        if boot_menu_doc is not None and not isinstance(boot_menu_doc, dict):
+            raise NlbootError("boot_menu must be an object when present")
+        boot_menu = BootMenu.from_dict(boot_menu_doc) if isinstance(boot_menu_doc, dict) else None
+        manifest = cls(
             manifest_id=manifest_id,
             boot_release_set_id=boot_release_set_id,
             base_release_set_ref=base_release_set_ref,
@@ -91,7 +226,11 @@ class SignedBootManifest:
             signature_algorithm=signature_algorithm,  # type: ignore[arg-type]
             crypto_profile=crypto_profile,  # type: ignore[arg-type]
             signature_hex=signature_hex,
+            boot_menu=boot_menu,
         )
+        if boot_menu is not None:
+            boot_menu.validate_for_manifest(manifest)
+        return manifest
 
 
 @dataclass(frozen=True)
@@ -174,6 +313,14 @@ class BootPlan:
     signature_algorithm: str
     crypto_profile: str
     execute: bool = False
+    selected_entry_id: str | None = None
+    boot_menu: BootMenu | None = None
+    required_proofs: tuple[str, ...] = (
+        "manifest-signature-verified",
+        "enrollment-token-bound",
+        "boot-menu-bound-when-present",
+        "execute-false",
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -186,6 +333,9 @@ class BootPlan:
             "signature_algorithm": self.signature_algorithm,
             "crypto_profile": self.crypto_profile,
             "execute": self.execute,
+            "selected_entry_id": self.selected_entry_id,
+            "boot_menu": self.boot_menu.to_dict() if self.boot_menu else None,
+            "required_proofs": list(self.required_proofs),
         }
 
 
@@ -197,6 +347,10 @@ def build_boot_plan(manifest: SignedBootManifest, token: EnrollmentToken, *, now
         "ephemeral": "boot-ephemeral",
         "bootstrap": "bootstrap-only",
     }
+    selected_entry_id = None
+    if manifest.boot_menu is not None:
+        manifest.boot_menu.validate_for_manifest(manifest)
+        selected_entry_id = manifest.boot_menu.default_entry().entry_id
     return BootPlan(
         action=action_by_mode[manifest.boot_mode],
         manifest_id=manifest.manifest_id,
@@ -207,4 +361,6 @@ def build_boot_plan(manifest: SignedBootManifest, token: EnrollmentToken, *, now
         signature_algorithm=manifest.signature_algorithm,
         crypto_profile=manifest.crypto_profile,
         execute=False,
+        selected_entry_id=selected_entry_id,
+        boot_menu=manifest.boot_menu,
     )
