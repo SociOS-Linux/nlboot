@@ -9,6 +9,7 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 - validates signed-boot-manifest-shaped objects before planning boot/recovery
 - verifies RSA-PSS/SHA-256 manifest signatures against a trusted-key document
 - validates one-time enrollment token intent, expiry, audience, and release/boot-release binding
+- validates optional signed `boot_menu` data for boot-picker / PXE-style recovery and rollback parity
 - produces a boot plan as JSON
 - records `execute=false` in produced plans
 - never downloads artifacts, writes disks, calls `kexec`, or mutates a host in this reference slice
@@ -29,6 +30,18 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 - `signature_algorithm`: `rsa-pss-sha256`
 - `crypto_profile`: `fips-140-3-compatible`
 - `signature_hex`: RSA-PSS/SHA-256 signature over the canonical unsigned manifest payload
+
+`SignedBootManifest` may also include `boot_menu`:
+
+- `boot_menu.menu_id`
+- `boot_menu.default_entry_id`
+- `boot_menu.entries[]`
+- each entry declares `entry_id`, `label`, `boot_release_set_id`, `release_set_ref`, `boot_mode`, and `role`
+- supported roles are `normal`, `recovery`, `installer`, `rollback`, `ephemeral`, and `bootstrap`
+- rollback entries must explicitly set `rollback_eligible=true`
+- the default menu entry must match the manifest boot release, base release, and boot mode
+
+The `boot_menu` object is part of the signed manifest payload. This gives SourceOS a planning contract for Apple-Silicon boot-picker entries and UEFI/PXE-style menu entries without performing host mutation in this tranche.
 
 `EnrollmentToken` requires:
 
