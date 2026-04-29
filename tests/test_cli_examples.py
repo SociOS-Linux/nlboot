@@ -42,3 +42,24 @@ def test_cli_examples_emit_safe_recovery_plan():
     assert plan["release_set_ref"] == "urn:srcos:release-set:m2-demo-2026-04-26"
     assert plan["signature_algorithm"] == "rsa-pss-sha256"
     assert plan["crypto_profile"] == "fips-140-3-compatible"
+    assert plan["policy_ref"] == "policy://sourceos/nlboot/recovery/safe-plan-v1"
+    assert plan["allowed_operations"] == [
+        "present-menu",
+        "verify-artifacts",
+        "plan-recovery",
+        "plan-rollback",
+    ]
+    assert plan["proof_requirements"] == [
+        "verified_manifest_signature",
+        "validated_one_time_token",
+        "artifact_ref_manifest",
+        "boot_plan_record",
+        "device_claim_record",
+        "post_action_fingerprint",
+    ]
+    assert plan["offline_fallback"] == {
+        "enabled": True,
+        "strategy": "last-known-good-signed-boot-release-set",
+        "requires_signature_verification": True,
+        "allows_unsigned_artifacts": False,
+    }

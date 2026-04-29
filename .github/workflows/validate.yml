@@ -33,11 +33,11 @@ jobs:
         run: python -m pip install -e . pytest
       - name: Run validation
         run: make validate
-      - name: Validate M2 demo fixture through CLI
+      - name: Validate M2 recovery fixture through CLI
         run: |
           nlboot-plan \
-            --manifest examples/m2-demo/manifest.recovery.json \
-            --token examples/m2-demo/enrollment-token.recovery.json \
-            --trusted-keys examples/m2-demo/trusted-keys.json \
+            --manifest examples/signed_boot_manifest.recovery.json \
+            --token examples/enrollment_token.recovery.json \
+            --trusted-keys examples/trusted_keys.recovery.json \
             --require-fips \
             --now 2026-04-26T14:35:00Z

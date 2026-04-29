@@ -11,6 +11,11 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 - validates one-time enrollment token intent, expiry, audience, and release/boot-release binding
 - produces a boot plan as JSON
 - records `execute=false` in produced plans
+- emits SourceOS control-plane metadata in boot plans:
+  - `policy_ref`
+  - `allowed_operations`
+  - `proof_requirements`
+  - `offline_fallback`
 - never downloads artifacts, writes disks, calls `kexec`, or mutates a host in this reference slice
 
 ## Protocol objects
@@ -39,22 +44,36 @@ This repository implements the safe planning core for the SourceOS / SociOS boot
 - matching `boot_release_set_ref`
 - purpose compatible with the boot mode
 
+`BootPlan` is emitted only after manifest verification and token validation. It includes:
+
+- the selected plan action
+- boot and release-set references
+- artifact references
+- signature and crypto profile metadata
+- policy reference for the boot mode
+- safe planning operations allowed by that boot mode
+- proof requirements the eventual executor must satisfy
+- offline fallback posture
+- `execute=false`
+
+The planner is intentionally conservative. It creates an authorized plan record, not a host-mutating execution path.
+
 ## M2 demo fixture
 
-The repository carries a side-effect-free M2 recovery fixture under `examples/m2-demo/`:
+The repository carries a side-effect-free M2 recovery fixture under `examples/`:
 
-- `manifest.recovery.json`
-- `enrollment-token.recovery.json`
-- `trusted-keys.json`
+- `signed_boot_manifest.recovery.json`
+- `enrollment_token.recovery.json`
+- `trusted_keys.recovery.json`
 
 Run it through the planner:
 
 ```bash
 python3 -m pip install -e .
 nlboot-plan \
-  --manifest examples/m2-demo/manifest.recovery.json \
-  --token examples/m2-demo/enrollment-token.recovery.json \
-  --trusted-keys examples/m2-demo/trusted-keys.json \
+  --manifest examples/signed_boot_manifest.recovery.json \
+  --token examples/enrollment_token.recovery.json \
+  --trusted-keys examples/trusted_keys.recovery.json \
   --require-fips \
   --now 2026-04-26T14:35:00Z
 ```

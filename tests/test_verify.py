@@ -108,10 +108,14 @@ def test_signed_trust_bundle_rejects_non_fips_algorithm():
         load_verified_trust_bundle(trust_bundle(signature_algorithm="ed25519"), root_keys=root_keys, now=now())
 
 
-def test_signed_trust_bundle_rejects_revoked_root():
+def test_signed_trust_bundle_rejects_revoked_root(monkeypatch: pytest.MonkeyPatch):
+    def fake_verify(*, payload: bytes, signature_hex: str, trusted_key: object) -> None:
+        assert payload == verify.canonical_trust_bundle_payload(bundle)
+        assert signature_hex == "00"
+
     root_keys = load_trusted_keys(key_doc(), now=now())
     revoked_root = key_doc(status="revoked", revoked_at="2026-04-20T00:00:00Z")
-    root_keys["urn:srcos:key:sourceos-release-root"] = load_trusted_keys(key_doc(), now=now())["urn:srcos:key:sourceos-release-root"]
     bundle = trust_bundle(keys=revoked_root["keys"])
+    monkeypatch.setattr(verify, "verify_rsa_pss_sha256", fake_verify)
     with pytest.raises(VerificationError, match="revoked"):
         load_verified_trust_bundle(bundle, root_keys=root_keys, now=now())
