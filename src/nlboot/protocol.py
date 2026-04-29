@@ -173,6 +173,10 @@ class BootPlan:
     authorized_by: str
     signature_algorithm: str
     crypto_profile: str
+    policy_ref: str
+    allowed_operations: list[str]
+    proof_requirements: list[str]
+    offline_fallback: dict[str, Any]
     execute: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -185,8 +189,47 @@ class BootPlan:
             "authorized_by": self.authorized_by,
             "signature_algorithm": self.signature_algorithm,
             "crypto_profile": self.crypto_profile,
+            "policy_ref": self.policy_ref,
+            "allowed_operations": self.allowed_operations,
+            "proof_requirements": self.proof_requirements,
+            "offline_fallback": self.offline_fallback,
             "execute": self.execute,
         }
+
+
+def _policy_ref_for_mode(mode: BootMode) -> str:
+    return f"policy://sourceos/nlboot/{mode}/safe-plan-v1"
+
+
+def _allowed_operations_for_mode(mode: BootMode) -> list[str]:
+    operations_by_mode: dict[BootMode, list[str]] = {
+        "recovery": ["present-menu", "verify-artifacts", "plan-recovery", "plan-rollback"],
+        "installer": ["present-menu", "verify-artifacts", "plan-install"],
+        "ephemeral": ["present-menu", "verify-artifacts", "plan-ephemeral-boot"],
+        "bootstrap": ["present-menu", "verify-artifacts", "plan-bootstrap"],
+    }
+    return operations_by_mode[mode]
+
+
+def _proof_requirements_for_mode(mode: BootMode) -> list[str]:
+    common = [
+        "verified_manifest_signature",
+        "validated_one_time_token",
+        "artifact_ref_manifest",
+        "boot_plan_record",
+    ]
+    if mode in {"recovery", "installer"}:
+        return [*common, "device_claim_record", "post_action_fingerprint"]
+    return [*common, "session_fingerprint"]
+
+
+def _offline_fallback_for_mode(mode: BootMode) -> dict[str, Any]:
+    return {
+        "enabled": mode in {"recovery", "ephemeral"},
+        "strategy": "last-known-good-signed-boot-release-set" if mode in {"recovery", "ephemeral"} else "none",
+        "requires_signature_verification": True,
+        "allows_unsigned_artifacts": False,
+    }
 
 
 def build_boot_plan(manifest: SignedBootManifest, token: EnrollmentToken, *, now: datetime | None = None) -> BootPlan:
@@ -206,5 +249,9 @@ def build_boot_plan(manifest: SignedBootManifest, token: EnrollmentToken, *, now
         authorized_by=token.token_id,
         signature_algorithm=manifest.signature_algorithm,
         crypto_profile=manifest.crypto_profile,
+        policy_ref=_policy_ref_for_mode(manifest.boot_mode),
+        allowed_operations=_allowed_operations_for_mode(manifest.boot_mode),
+        proof_requirements=_proof_requirements_for_mode(manifest.boot_mode),
+        offline_fallback=_offline_fallback_for_mode(manifest.boot_mode),
         execute=False,
     )
