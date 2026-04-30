@@ -19,7 +19,26 @@ make rust-apple-m2-dry-run-fixture
 
 The release workflow must also run these targets on the native Linux build before packaging artifacts.
 
-## 2. Release workflow gate
+## 2. Release-candidate gate
+
+Before publishing a tagged release, run the release-candidate workflow:
+
+```text
+.github/workflows/release-candidate.yml
+```
+
+The release-candidate workflow must produce:
+
+- `nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz`
+- `nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz.sha256`
+- `release-candidate-manifest.json` inside the archive
+- `Cargo.lock` inside the archive
+- `cargo-metadata.json` inside the archive
+- provenance attestation where GitHub supports it
+
+Release-candidate artifacts are for validation only. They must not be treated as stable releases and must not drive Homebrew formula publication.
+
+## 3. Release workflow gate
 
 The release workflow must produce:
 
@@ -29,9 +48,10 @@ The release workflow must produce:
 - combined `SHA256SUMS`
 - `release-manifest.json` inside each archive
 - `Cargo.lock` inside each archive
+- dependency metadata or SBOM artifact where available
 - provenance attestation where GitHub supports it
 
-## 3. Release manifest gate
+## 4. Release manifest gate
 
 Each release manifest must include:
 
@@ -43,9 +63,10 @@ Each release manifest must include:
 - validation command list;
 - host-mutation default posture;
 - Apple Silicon adapter posture;
-- Cargo lock inclusion flag.
+- Cargo lock inclusion flag;
+- dependency metadata inclusion flag.
 
-## 4. Operator documentation gate
+## 5. Operator documentation gate
 
 The release must reference:
 
@@ -57,7 +78,7 @@ The release must reference:
 
 The operator quickstart must describe dry-run proof only. Real host-changing operation must remain gated by explicit commands, root/capability, evidence records, and review.
 
-## 5. Homebrew gate
+## 6. Homebrew gate
 
 The Homebrew formula must not invent release URLs or hashes.
 
@@ -69,7 +90,7 @@ Before publishing a formula update:
 4. run Homebrew formula validation;
 5. open a PR in `SocioProphet/homebrew-prophet` with validation evidence.
 
-## 6. SourceOS integration gate
+## 7. SourceOS integration gate
 
 The release is not SourceOS-integrated until:
 
@@ -78,7 +99,7 @@ The release is not SourceOS-integrated until:
 - `mdheller/socioprophet-web` can display mock NLBoot evidence records in the Vue shell;
 - `SocioProphet/homebrew-prophet` has a formula/update path.
 
-## 7. Risk boundary
+## 8. Risk boundary
 
 The following are not release-complete until separately reviewed and proven:
 
@@ -91,13 +112,15 @@ The following are not release-complete until separately reviewed and proven:
 
 Release artifacts may be published for operator dry-run testing before these exist, but they must not claim those capabilities.
 
-## 8. Completion definition
+## 9. Completion definition
 
 An NLBoot operator-test release is complete when:
 
 - CI passes;
+- release-candidate workflow passes;
 - release workflow publishes archives and checksums;
 - provenance attestation is present or explicitly noted as unavailable;
+- dependency metadata or SBOM is present or explicitly deferred;
 - release notes state exact supported and unsupported behaviors;
 - Homebrew formula PR exists or is merged;
 - SourceOS schema/boot/web integration issues are linked from the release notes.
