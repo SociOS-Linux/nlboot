@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
-use ring::signature;
+use rsa::pkcs8::DecodePublicKey;
+use rsa::pss::{Signature, VerifyingKey};
+use rsa::signature::Verifier;
+use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -218,13 +221,29 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
+fn sort_value_keys(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map
+                .into_iter()
+                .map(|(k, v)| (k, sort_value_keys(v)))
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(entries.into_iter().collect())
+        }
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sort_value_keys).collect()),
+        other => other,
+    }
+}
+
 fn canonical_manifest_payload(manifest_value: &Value) -> Result<Vec<u8>> {
     let mut unsigned = manifest_value
         .as_object()
         .cloned()
         .context("manifest must be a JSON object")?;
     unsigned.remove("signature_hex");
-    Ok(serde_json::to_vec(&Value::Object(unsigned))?)
+    let sorted = sort_value_keys(Value::Object(unsigned));
+    Ok(serde_json::to_vec(&sorted)?)
 }
 
 fn validate_manifest_shape(manifest: &SignedBootManifest, require_fips: bool) -> Result<()> {
@@ -309,11 +328,13 @@ fn trusted_key_for<'a>(trusted_keys: &'a TrustedKeyDocument, signer_ref: &str, n
 
 fn verify_rsa_pss_sha256(payload: &[u8], signature_hex: &str, key: &TrustedKey) -> Result<()> {
     let signature_bytes = hex::decode(signature_hex).context("signature_hex must be hex")?;
-    let pem = pem::parse(key.public_key_pem.as_bytes()).context("failed to parse trusted key PEM")?;
-    let public_key_der = pem.contents();
-    let verifier = signature::UnparsedPublicKey::new(&signature::RSA_PSS_2048_8192_SHA256, public_key_der);
-    verifier
-        .verify(payload, &signature_bytes)
+    let public_key = RsaPublicKey::from_public_key_pem(&key.public_key_pem)
+        .context("failed to parse trusted key PEM")?;
+    let verifying_key = VerifyingKey::<Sha256>::new(public_key);
+    let sig = Signature::try_from(signature_bytes.as_slice())
+        .map_err(|e| anyhow::anyhow!("invalid signature bytes: {}", e))?;
+    verifying_key
+        .verify(payload, &sig)
         .map_err(|_| anyhow::anyhow!("signature verification failed"))?;
     Ok(())
 }
@@ -810,222 +831,4 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod canon_tests {
-    use super::*;
-
-    #[test]
-    fn canonical_payload_matches_python_reference() {
-        let raw = std::fs::read_to_string("../../examples/signed_boot_manifest.recovery.json")
-            .expect("read manifest");
-        let manifest_value: Value = serde_json::from_str(&raw).expect("parse manifest");
-        let payload = canonical_manifest_payload(&manifest_value).expect("canonicalize");
-        let payload_str = String::from_utf8(payload).expect("utf8");
-        eprintln!("Rust canonical payload: {}", &payload_str);
-        // Python reference: json.dumps(unsigned, sort_keys=True, separators=(',', ':'))
-        let expected = r#"{"artifacts":{"initrd_ref":"urn:srcos:artifact:m2-demo-recovery-initrd-sha256-08f4c82e","kernel_ref":"urn:srcos:artifact:m2-demo-recovery-kernel-sha256-0f3b6d7f","rootfs_ref":"urn:srcos:artifact:m2-demo-recovery-rootfs-sha256-5f4dcc3b"},"base_release_set_ref":"urn:srcos:release-set:m2-demo-2026-04-26","boot_mode":"recovery","boot_release_set_id":"urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26","crypto_profile":"fips-140-3-compatible","manifest_id":"urn:srcos:boot-manifest:m2-demo-recovery-2026-04-26","signature_algorithm":"rsa-pss-sha256","signature_ref":"urn:srcos:signature:m2-demo-recovery-2026-04-26","signer_ref":"urn:srcos:key:sourceos-release-root"}"#;
-        assert_eq!(payload_str, expected, "Rust output does not match Python reference");
-    }
-}
-
-#[cfg(test)]
-mod verify_debug_tests {
-    use super::*;
-
-    #[test]
-    fn verify_fixture_signature_directly() {
-        let raw = std::fs::read_to_string("../../examples/signed_boot_manifest.recovery.json").unwrap();
-        let manifest_value: Value = serde_json::from_str(&raw).unwrap();
-        let manifest: SignedBootManifest = serde_json::from_str(&raw).unwrap();
-        
-        let payload = canonical_manifest_payload(&manifest_value).unwrap();
-        eprintln!("Payload: {}", String::from_utf8(payload.clone()).unwrap());
-        eprintln!("Payload len: {}", payload.len());
-        eprintln!("Sig hex len: {}", manifest.signature_hex.len());
-        
-        let trusted_raw = std::fs::read_to_string("../../examples/trusted_keys.recovery.json").unwrap();
-        let trusted_keys: TrustedKeyDocument = serde_json::from_str(&trusted_raw).unwrap();
-        let key = &trusted_keys.keys[0];
-        
-        eprintln!("Key ref: {}", key.key_ref);
-        
-        let sig_bytes = hex::decode(&manifest.signature_hex).unwrap();
-        eprintln!("Sig bytes len: {}", sig_bytes.len());
-        
-        let pem_parsed = pem::parse(key.public_key_pem.as_bytes()).unwrap();
-        let public_key_der = pem_parsed.contents().to_vec();
-        eprintln!("DER len: {}", public_key_der.len());
-        
-        let verifier = ring::signature::UnparsedPublicKey::new(
-            &ring::signature::RSA_PSS_2048_8192_SHA256,
-            &public_key_der,
-        );
-        let result = verifier.verify(&payload, &sig_bytes);
-        eprintln!("Ring verify result: {:?}", result);
-        assert!(result.is_ok(), "Ring signature verification failed");
-    }
-}
-
-#[cfg(test)]
-mod rsa_key_debug_tests {
-    use super::*;
-    use ring::signature;
-
-    #[test]
-    fn check_der_format() {
-        let trusted_raw = std::fs::read_to_string("../../examples/trusted_keys.recovery.json").unwrap();
-        let trusted_keys: TrustedKeyDocument = serde_json::from_str(&trusted_raw).unwrap();
-        let key = &trusted_keys.keys[0];
-        
-        let pem_parsed = pem::parse(key.public_key_pem.as_bytes()).unwrap();
-        eprintln!("PEM tag: {}", pem_parsed.tag());
-        let der = pem_parsed.contents();
-        eprintln!("DER first 10 bytes: {:?}", &der[..10.min(der.len())]);
-        eprintln!("DER length: {}", der.len());
-        
-        // Try to parse DER using ring
-        let result = signature::UnparsedPublicKey::new(
-            &signature::RSA_PSS_2048_8192_SHA256,
-            der,
-        );
-        eprintln!("Created UnparsedPublicKey successfully");
-        
-        // Now try to verify
-        let payload = b"test";
-        let fake_sig = vec![0u8; 256];
-        let verify_result = result.verify(payload, &fake_sig);
-        eprintln!("Verify with fake sig (expected fail): {:?}", verify_result);
-    }
-}
-
-#[cfg(test)]
-mod fresh_key_tests {
-    use super::*;
-    use ring::signature;
-
-    #[test]
-    fn ring_verifies_freshly_generated_python_signature() {
-        // Load test data generated by Python
-        let test_data_raw = std::fs::read_to_string("/tmp/test_keys.json").unwrap();
-        let test_data: serde_json::Value = serde_json::from_str(&test_data_raw).unwrap();
-        
-        let pub_pem = test_data["public_key_pem"].as_str().unwrap();
-        let payload = test_data["payload"].as_str().unwrap().as_bytes();
-        let sig_hex = test_data["signature_hex"].as_str().unwrap();
-        
-        let sig_bytes = hex::decode(sig_hex).unwrap();
-        let pem_parsed = pem::parse(pub_pem.as_bytes()).unwrap();
-        let der = pem_parsed.contents();
-        
-        eprintln!("DER len: {}", der.len());
-        eprintln!("Sig len: {}", sig_bytes.len());
-        eprintln!("Payload len: {}", payload.len());
-        
-        let verifier = signature::UnparsedPublicKey::new(
-            &signature::RSA_PSS_2048_8192_SHA256,
-            der,
-        );
-        let result = verifier.verify(payload, &sig_bytes);
-        eprintln!("Ring verify fresh key result: {:?}", result);
-        assert!(result.is_ok(), "Ring should verify fresh Python signature");
-    }
-}
-
-#[cfg(test)]
-mod salt_length_tests {
-    use super::*;
-    use ring::signature;
-
-    #[test]
-    fn find_which_salt_length_ring_accepts() {
-        let test_data_raw = std::fs::read_to_string("/tmp/ring_test_data.json").unwrap();
-        let test_data: serde_json::Value = serde_json::from_str(&test_data_raw).unwrap();
-        
-        let pub_pem = test_data["pub_pem"].as_str().unwrap();
-        let payload = test_data["payload"].as_str().unwrap().as_bytes();
-        
-        let pem_parsed = pem::parse(pub_pem.as_bytes()).unwrap();
-        let der = pem_parsed.contents();
-        
-        let sigs = test_data["sigs"].as_object().unwrap();
-        for (salt_len, sig_hex_val) in sigs {
-            let sig_hex = sig_hex_val.as_str().unwrap();
-            let sig_bytes = hex::decode(sig_hex).unwrap();
-            let verifier = signature::UnparsedPublicKey::new(
-                &signature::RSA_PSS_2048_8192_SHA256,
-                der,
-            );
-            let result = verifier.verify(payload, &sig_bytes);
-            eprintln!("salt_length={}: ring verify result: {:?}", salt_len, result.is_ok());
-        }
-    }
-}
-
-#[cfg(test)]
-mod pem_debug_tests {
-    use super::*;
-
-    #[test]
-    fn debug_pem_parsing() {
-        let trusted_raw = std::fs::read_to_string("../../examples/trusted_keys.recovery.json").unwrap();
-        let trusted_keys: TrustedKeyDocument = serde_json::from_str(&trusted_raw).unwrap();
-        let key = &trusted_keys.keys[0];
-        
-        eprintln!("PEM first 100 chars: {:?}", &key.public_key_pem[..100]);
-        
-        let pem_bytes = key.public_key_pem.as_bytes();
-        eprintln!("Has actual newlines: {}", pem_bytes.contains(&b'\n'));
-        eprintln!("PEM bytes len: {}", pem_bytes.len());
-        
-        match pem::parse(pem_bytes) {
-            Ok(p) => {
-                eprintln!("PEM tag: {:?}", p.tag());
-                eprintln!("Contents len: {}", p.contents().len());
-                eprintln!("Contents first 10: {:?}", &p.contents()[..10]);
-            }
-            Err(e) => {
-                eprintln!("PEM parse error: {:?}", e);
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod ring_self_test {
-    use ring::{rand, rsa, signature};
-    
-    #[test]
-    fn ring_signs_and_verifies_with_rsa_pss_sha256() {
-        let rng = rand::SystemRandom::new();
-        // Generate a 2048-bit RSA key pair in ring
-        let private_key = rsa::KeyPair::generate(&rng, 2048).expect("keygen");
-        
-        let payload = b"test payload for ring RSA PSS verification";
-        
-        let mut sig_bytes = vec![0u8; private_key.public_modulus_len()];
-        private_key
-            .sign(
-                &signature::RSA_PSS_SHA256,
-                &rng,
-                payload,
-                &mut sig_bytes,
-            )
-            .expect("sign");
-        
-        eprintln!("sig_bytes len: {}", sig_bytes.len());
-        
-        // Get the public key DER
-        let pub_key_der = private_key.public_key().as_ref();
-        eprintln!("pub_key_der len: {}", pub_key_der.len());
-        
-        let verifier = signature::UnparsedPublicKey::new(
-            &signature::RSA_PSS_2048_8192_SHA256,
-            pub_key_der,
-        );
-        let result = verifier.verify(payload, &sig_bytes);
-        eprintln!("Ring self-sign verify result: {:?}", result);
-        assert!(result.is_ok(), "Ring should verify its own RSA PSS signature");
-    }
 }
