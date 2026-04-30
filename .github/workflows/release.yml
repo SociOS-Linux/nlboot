@@ -54,6 +54,9 @@ jobs:
           make rust-exec-dry-run-fixture
           make rust-apple-m2-dry-run-fixture
 
+      - name: Generate dependency lock for release build
+        run: cd rust/nlboot-client && cargo generate-lockfile
+
       - name: Build release binary
         run: cd rust/nlboot-client && cargo build --locked --release --target ${{ matrix.target }}
 
@@ -63,6 +66,7 @@ jobs:
           TARGET="${{ matrix.target }}"
           mkdir -p dist/${TARGET}
           cp rust/nlboot-client/target/${TARGET}/release/nlboot-client dist/${TARGET}/
+          cp rust/nlboot-client/Cargo.lock dist/${TARGET}/Cargo.lock
           cp README.md docs/RELEASE_AND_INSTALL.md dist/${TARGET}/
           cat > dist/${TARGET}/release-manifest.json <<EOF
           {
@@ -82,7 +86,8 @@ jobs:
               "make rust-apple-m2-dry-run-fixture"
             ],
             "hostMutationDefault": "refuse-unless-explicitly-acknowledged",
-            "appleSiliconAdapter": "dry-run-evidence-only"
+            "appleSiliconAdapter": "dry-run-evidence-only",
+            "cargoLockIncluded": true
           }
           EOF
 
