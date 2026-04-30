@@ -196,6 +196,91 @@ fn execute_exec_dry_run_requires_prior_load_only_and_emits_exec_proof() {
 }
 
 #[test]
+fn apple_silicon_m2_dry_run_emits_adapter_records() {
+    let (_dir, plan_path, cache_dir, evidence_dir) = prepared_fixture();
+
+    Command::cargo_bin("nlboot-client")
+        .expect("nlboot-client binary exists")
+        .args([
+            "execute",
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--cache",
+            cache_dir.to_str().unwrap(),
+            "--adapter",
+            "apple-silicon-m2",
+            "--load-only",
+            "--dry-run",
+            "--evidence",
+            evidence_dir.to_str().unwrap(),
+            "--i-understand-this-mutates-host",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"kind\": \"adapter-plan-record\""))
+        .stdout(predicate::str::contains("\"adapter\": \"apple-silicon-m2\""))
+        .stdout(predicate::str::contains("\"dry_run\": true"));
+
+    assert!(evidence_dir.join("adapter-plan-record.json").exists());
+    assert!(evidence_dir.join("boot-entry-record.json").exists());
+    let raw = fs::read_to_string(evidence_dir.join("boot-entry-record.json")).expect("read entry record");
+    assert!(raw.contains("SourceOS"));
+    assert!(raw.contains("SourceOS Recovery/Installer"));
+}
+
+#[test]
+fn apple_silicon_m2_refuses_without_acknowledgement() {
+    let (_dir, plan_path, cache_dir, evidence_dir) = prepared_fixture();
+
+    Command::cargo_bin("nlboot-client")
+        .expect("nlboot-client binary exists")
+        .args([
+            "execute",
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--cache",
+            cache_dir.to_str().unwrap(),
+            "--adapter",
+            "apple-silicon-m2",
+            "--load-only",
+            "--dry-run",
+            "--evidence",
+            evidence_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("refusing host mutation without --i-understand-this-mutates-host"));
+
+    assert!(evidence_dir.join("refusal-record.json").exists());
+}
+
+#[test]
+fn apple_silicon_m2_refuses_non_dry_run() {
+    let (_dir, plan_path, cache_dir, evidence_dir) = prepared_fixture();
+
+    Command::cargo_bin("nlboot-client")
+        .expect("nlboot-client binary exists")
+        .args([
+            "execute",
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--cache",
+            cache_dir.to_str().unwrap(),
+            "--adapter",
+            "apple-silicon-m2",
+            "--load-only",
+            "--evidence",
+            evidence_dir.to_str().unwrap(),
+            "--i-understand-this-mutates-host",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("m2 adapter proof currently requires dry-run mode"));
+
+    assert!(evidence_dir.join("refusal-record.json").exists());
+}
+
+#[test]
 fn execute_refuses_without_mutation_acknowledgement() {
     let dir = tempdir().expect("tempdir");
     let plan_path = dir.path().join("plan.json");
