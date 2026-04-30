@@ -1,0 +1,98 @@
+name: nlboot release
+
+on:
+  push:
+    tags:
+      - "nlboot-client-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build nlboot-client (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install cross linker for aarch64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Configure aarch64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          mkdir -p rust/nlboot-client/.cargo
+          cat > rust/nlboot-client/.cargo/config.toml <<'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Run validation on native target
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          make validate
+          make rust-check
+          make rust-test
+          make rust-run-fixture
+          make rust-fetch-fixture
+          make rust-execute-dry-run-fixture
+          make rust-exec-dry-run-fixture
+          make rust-apple-m2-dry-run-fixture
+
+      - name: Build release binary
+        run: cd rust/nlboot-client && cargo build --release --target ${{ matrix.target }}
+
+      - name: Package archive
+        run: |
+          VERSION="${GITHUB_REF_NAME:-manual}"
+          ARCHIVE="nlboot-client-${VERSION}-${{ matrix.target }}.tar.gz"
+          mkdir -p dist/${{ matrix.target }}
+          cp rust/nlboot-client/target/${{ matrix.target }}/release/nlboot-client dist/${{ matrix.target }}/
+          cp README.md docs/RELEASE_AND_INSTALL.md dist/${{ matrix.target }}/
+          tar -czf "$ARCHIVE" -C dist/${{ matrix.target }} .
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlboot-client-${{ matrix.target }}
+          path: |
+            nlboot-client-*.tar.gz
+            nlboot-client-*.tar.gz.sha256
+
+  publish:
+    name: Publish release artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release payload
+        run: |
+          find artifacts -type f -name '*.tar.gz' -exec cp {} . \;
+          find artifacts -type f -name '*.sha256' -exec cp {} . \;
+          cat *.sha256 > SHA256SUMS
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            nlboot-client-*.tar.gz
+            nlboot-client-*.tar.gz.sha256
+            SHA256SUMS
