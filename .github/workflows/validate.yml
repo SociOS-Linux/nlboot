@@ -59,5 +59,7 @@ jobs:
           toolchain: stable
       - name: Check Rust client scaffold
         run: make rust-check
+      - name: Test Rust client scaffold
+        run: make rust-test
       - name: Run Rust M2 recovery fixture scaffold
         run: make rust-run-fixture
