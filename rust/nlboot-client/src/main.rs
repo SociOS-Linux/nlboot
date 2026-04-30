@@ -49,7 +49,7 @@ enum Commands {
         #[arg(long)]
         evidence: PathBuf,
     },
-    /// Execute a gated platform handoff. The first usable adapter supports linux-kexec.
+    /// Execute a gated platform handoff.
     Execute {
         #[arg(long)]
         plan: PathBuf,
@@ -702,6 +702,57 @@ fn execute_linux_kexec_exec(plan_path: PathBuf, cache: PathBuf, evidence: PathBu
     Ok(())
 }
 
+fn execute_m2_adapter_dry_run(plan_path: PathBuf, evidence: PathBuf, mutation_ack: bool, dry_run: bool) -> Result<()> {
+    require_mutation_ack(&evidence, mutation_ack)?;
+    if !dry_run {
+        write_refusal(&evidence, "m2 adapter proof currently requires dry-run mode");
+        anyhow::bail!("m2 adapter proof currently requires dry-run mode");
+    }
+    let plan = load_plan(&plan_path)?;
+    fs::create_dir_all(&evidence).with_context(|| format!("failed to create evidence dir {}", evidence.display()))?;
+    let adapter_record = json!({
+        "ok": true,
+        "kind": "adapter-plan-record",
+        "created_at": Utc::now(),
+        "adapter": "apple-silicon-m2",
+        "mode": "recovery-entry-dry-run",
+        "dry_run": true,
+        "plan_manifest_id": plan.manifest_id,
+        "boot_release_set_id": plan.boot_release_set_id,
+        "release_set_ref": plan.release_set_ref,
+        "mutation_performed": false,
+        "portable_core_preserved": true
+    });
+    let entry_record = json!({
+        "ok": true,
+        "kind": "boot-entry-record",
+        "created_at": Utc::now(),
+        "adapter": "apple-silicon-m2",
+        "entries": [
+            {
+                "id": "sourceos-normal",
+                "label": "SourceOS",
+                "role": "normal",
+                "boot_release_set_id": plan.boot_release_set_id,
+                "release_set_ref": plan.release_set_ref,
+                "mutation_performed": false
+            },
+            {
+                "id": "sourceos-recovery-installer",
+                "label": "SourceOS Recovery/Installer",
+                "role": "recovery-installer",
+                "boot_release_set_id": plan.boot_release_set_id,
+                "release_set_ref": plan.release_set_ref,
+                "mutation_performed": false
+            }
+        ]
+    });
+    write_json(&evidence.join("adapter-plan-record.json"), &adapter_record)?;
+    write_json(&evidence.join("boot-entry-record.json"), &entry_record)?;
+    println!("{}", serde_json::to_string_pretty(&adapter_record)?);
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -733,17 +784,28 @@ fn main() -> Result<()> {
                 write_refusal(&evidence, "choose either --load-only or --exec, not both");
                 anyhow::bail!("choose either --load-only or --exec, not both");
             }
-            if adapter != "linux-kexec" {
-                write_refusal(&evidence, "unsupported platform adapter");
-                anyhow::bail!("unsupported adapter {adapter:?}; supported: linux-kexec");
-            }
-            if load_only {
-                execute_linux_kexec_load_only(plan, cache, evidence, mutation_ack, dry_run)?;
-            } else if exec_now {
-                execute_linux_kexec_exec(plan, cache, evidence, mutation_ack, reboot_ack, dry_run)?;
+            if adapter == "apple-silicon-m2" {
+                if exec_now {
+                    write_refusal(&evidence, "apple-silicon-m2 adapter does not support --exec in this proof lane");
+                    anyhow::bail!("apple-silicon-m2 adapter does not support --exec in this proof lane");
+                }
+                if !load_only {
+                    write_refusal(&evidence, "apple-silicon-m2 adapter requires --load-only dry-run proof mode");
+                    anyhow::bail!("apple-silicon-m2 adapter requires --load-only dry-run proof mode");
+                }
+                execute_m2_adapter_dry_run(plan, evidence, mutation_ack, dry_run)?;
+            } else if adapter == "linux-kexec" {
+                if load_only {
+                    execute_linux_kexec_load_only(plan, cache, evidence, mutation_ack, dry_run)?;
+                } else if exec_now {
+                    execute_linux_kexec_exec(plan, cache, evidence, mutation_ack, reboot_ack, dry_run)?;
+                } else {
+                    write_refusal(&evidence, "execute requires --load-only or --exec");
+                    anyhow::bail!("execute requires --load-only or --exec");
+                }
             } else {
-                write_refusal(&evidence, "execute requires --load-only or --exec");
-                anyhow::bail!("execute requires --load-only or --exec");
+                write_refusal(&evidence, "unsupported platform adapter");
+                anyhow::bail!("unsupported adapter {adapter:?}; supported: linux-kexec, apple-silicon-m2");
             }
         }
     }
