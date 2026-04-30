@@ -6,6 +6,7 @@ on:
       - "rust/**"
       - "examples/**"
       - "docs/**"
+      - "tools/**"
       - "Makefile"
       - "README.md"
       - ".github/workflows/release-candidate.yml"
@@ -45,12 +46,17 @@ jobs:
       - name: Build locked release candidate
         run: cd rust/nlboot-client && cargo build --locked --release --target x86_64-unknown-linux-gnu
 
-      - name: Generate dependency metadata
+      - name: Generate dependency metadata and SBOM
         run: |
           mkdir -p dist/rc
           cp rust/nlboot-client/Cargo.lock dist/rc/Cargo.lock
           cd rust/nlboot-client
           cargo metadata --locked --format-version 1 > ../../dist/rc/cargo-metadata.json
+          cd ../..
+          python3 tools/cargo_metadata_to_spdx.py \
+            dist/rc/cargo-metadata.json \
+            dist/rc/sbom.spdx.json \
+            --document-name nlboot-client-rc-sbom
 
       - name: Assemble release-candidate bundle
         run: |
@@ -79,7 +85,8 @@ jobs:
             "hostMutationDefault": "refuse-unless-explicitly-acknowledged",
             "appleSiliconAdapter": "dry-run-evidence-only",
             "cargoLockIncluded": true,
-            "dependencyMetadataIncluded": true
+            "dependencyMetadataIncluded": true,
+            "sbomIncluded": true
           }
           EOF
           tar -czf nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz -C dist/rc .
