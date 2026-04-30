@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -53,17 +55,48 @@ jobs:
           make rust-apple-m2-dry-run-fixture
 
       - name: Build release binary
-        run: cd rust/nlboot-client && cargo build --release --target ${{ matrix.target }}
+        run: cd rust/nlboot-client && cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Prepare release manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME:-manual}"
+          TARGET="${{ matrix.target }}"
+          mkdir -p dist/${TARGET}
+          cp rust/nlboot-client/target/${TARGET}/release/nlboot-client dist/${TARGET}/
+          cp README.md docs/RELEASE_AND_INSTALL.md dist/${TARGET}/
+          cat > dist/${TARGET}/release-manifest.json <<EOF
+          {
+            "artifact": "nlboot-client",
+            "version": "${VERSION}",
+            "target": "${TARGET}",
+            "commit": "${GITHUB_SHA}",
+            "sourceRepository": "${GITHUB_REPOSITORY}",
+            "validation": [
+              "make validate",
+              "make rust-check",
+              "make rust-test",
+              "make rust-run-fixture",
+              "make rust-fetch-fixture",
+              "make rust-execute-dry-run-fixture",
+              "make rust-exec-dry-run-fixture",
+              "make rust-apple-m2-dry-run-fixture"
+            ],
+            "hostMutationDefault": "refuse-unless-explicitly-acknowledged",
+            "appleSiliconAdapter": "dry-run-evidence-only"
+          }
+          EOF
 
       - name: Package archive
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
           ARCHIVE="nlboot-client-${VERSION}-${{ matrix.target }}.tar.gz"
-          mkdir -p dist/${{ matrix.target }}
-          cp rust/nlboot-client/target/${{ matrix.target }}/release/nlboot-client dist/${{ matrix.target }}/
-          cp README.md docs/RELEASE_AND_INSTALL.md dist/${{ matrix.target }}/
           tar -czf "$ARCHIVE" -C dist/${{ matrix.target }} .
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Attest archive provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: nlboot-client-*.tar.gz
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
