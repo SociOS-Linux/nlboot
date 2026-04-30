@@ -65,5 +65,7 @@ jobs:
         run: make rust-run-fixture
       - name: Run Rust fetch/cache fixture
         run: make rust-fetch-fixture
-      - name: Run Rust linux-kexec dry-run fixture
+      - name: Run Rust load-only dry-run fixture
         run: make rust-execute-dry-run-fixture
+      - name: Run Rust final handoff dry-run fixture
+        run: make rust-exec-dry-run-fixture
