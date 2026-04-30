@@ -28,6 +28,7 @@ jobs:
         with:
           toolchain: stable
           target: ${{ matrix.target }}
+          cache: false
 
       - name: Install cross linker for aarch64
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -60,7 +61,7 @@ jobs:
       - name: Build release binary
         run: cd rust/nlboot-client && cargo build --locked --release --target ${{ matrix.target }}
 
-      - name: Prepare release manifest
+      - name: Prepare release manifest and SBOM
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
           TARGET="${{ matrix.target }}"
@@ -68,6 +69,15 @@ jobs:
           cp rust/nlboot-client/target/${TARGET}/release/nlboot-client dist/${TARGET}/
           cp rust/nlboot-client/Cargo.lock dist/${TARGET}/Cargo.lock
           cp README.md docs/RELEASE_AND_INSTALL.md dist/${TARGET}/
+          cd rust/nlboot-client
+          cargo metadata --locked --format-version 1 > ../../dist/${TARGET}/cargo-metadata.json
+          cd ../..
+          python3 tools/cargo_metadata_to_spdx.py \
+            dist/${TARGET}/cargo-metadata.json \
+            dist/${TARGET}/sbom.spdx.json \
+            --document-name "nlboot-client-${VERSION}-${TARGET}-sbom"
+          cp dist/${TARGET}/sbom.spdx.json "nlboot-client-${VERSION}-${TARGET}-sbom.spdx.json"
+          sha256sum "nlboot-client-${VERSION}-${TARGET}-sbom.spdx.json" > "nlboot-client-${VERSION}-${TARGET}-sbom.spdx.json.sha256"
           cat > dist/${TARGET}/release-manifest.json <<EOF
           {
             "artifact": "nlboot-client",
@@ -87,7 +97,9 @@ jobs:
             ],
             "hostMutationDefault": "refuse-unless-explicitly-acknowledged",
             "appleSiliconAdapter": "dry-run-evidence-only",
-            "cargoLockIncluded": true
+            "cargoLockIncluded": true,
+            "dependencyMetadataIncluded": true,
+            "sbomIncluded": true
           }
           EOF
 
@@ -110,6 +122,8 @@ jobs:
           path: |
             nlboot-client-*.tar.gz
             nlboot-client-*.tar.gz.sha256
+            nlboot-client-*-sbom.spdx.json
+            nlboot-client-*-sbom.spdx.json.sha256
 
   publish:
     name: Publish release artifacts
@@ -124,6 +138,7 @@ jobs:
       - name: Prepare release payload
         run: |
           find artifacts -type f -name '*.tar.gz' -exec cp {} . \;
+          find artifacts -type f -name '*sbom.spdx.json' -exec cp {} . \;
           find artifacts -type f -name '*.sha256' -exec cp {} . \;
           cat *.sha256 > SHA256SUMS
 
@@ -133,4 +148,6 @@ jobs:
           files: |
             nlboot-client-*.tar.gz
             nlboot-client-*.tar.gz.sha256
+            nlboot-client-*-sbom.spdx.json
+            nlboot-client-*-sbom.spdx.json.sha256
             SHA256SUMS
