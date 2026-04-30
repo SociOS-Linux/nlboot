@@ -50,16 +50,20 @@ jobs:
             --require-fips \
             --now 2026-04-26T14:35:00Z
 
-  rust-scaffold:
+  rust-usable-mvp:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - name: Check Rust client scaffold
+      - name: Check Rust client
         run: make rust-check
-      - name: Test Rust client scaffold
+      - name: Test Rust client
         run: make rust-test
-      - name: Run Rust M2 recovery fixture scaffold
+      - name: Run Rust M2 recovery fixture planner
         run: make rust-run-fixture
+      - name: Run Rust fetch/cache fixture
+        run: make rust-fetch-fixture
+      - name: Run Rust linux-kexec dry-run fixture
+        run: make rust-execute-dry-run-fixture
