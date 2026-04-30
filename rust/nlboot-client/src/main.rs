@@ -491,6 +491,15 @@ fn write_refusal(evidence_dir: &Path, reason: &str) {
     let _ = fs::write(evidence_dir.join("refusal-record.json"), serde_json::to_string_pretty(&record).unwrap_or_else(|_| "{}".to_string()) + "\n");
 }
 
+fn plan_key_to_artifact_kind(plan_key: &str) -> Result<&str> {
+    match plan_key {
+        "kernel_ref" => Ok("kernel"),
+        "initrd_ref" => Ok("initrd"),
+        "rootfs_ref" => Ok("rootfs"),
+        other => anyhow::bail!("unsupported artifact key in plan: {other}"),
+    }
+}
+
 fn fetch_artifacts(plan_path: PathBuf, artifact_map_path: PathBuf, cache: PathBuf, evidence: PathBuf) -> Result<()> {
     let plan = load_plan(&plan_path)?;
     let artifact_map: ArtifactMap = read_json(&artifact_map_path)?;
@@ -498,14 +507,15 @@ fn fetch_artifacts(plan_path: PathBuf, artifact_map_path: PathBuf, cache: PathBu
     fs::create_dir_all(&evidence).with_context(|| format!("failed to create evidence dir {}", evidence.display()))?;
 
     let mut cached = Vec::new();
-    for (kind, artifact_ref) in &plan.artifacts {
+    for (plan_key, artifact_ref) in &plan.artifacts {
+        let expected_kind = plan_key_to_artifact_kind(plan_key)?;
         let descriptor = artifact_map
             .artifacts
             .iter()
             .find(|candidate| &candidate.artifact_ref == artifact_ref)
             .with_context(|| format!("artifact ref {artifact_ref} missing from artifact map"))?;
-        if descriptor.kind != *kind {
-            anyhow::bail!("artifact kind mismatch for {artifact_ref}: plan has {kind}, map has {}", descriptor.kind);
+        if descriptor.kind != expected_kind {
+            anyhow::bail!("artifact kind mismatch for {artifact_ref}: plan key expects {expected_kind}, map has {}", descriptor.kind);
         }
         let bytes = read_artifact_source(&descriptor.source, &artifact_map_path)?;
         let actual_sha256 = sha256_hex(&bytes);
