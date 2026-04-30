@@ -1,4 +1,4 @@
-.PHONY: validate test rust-check rust-test rust-run-fixture rust-fetch-fixture rust-execute-dry-run-fixture
+.PHONY: validate test rust-check rust-test rust-run-fixture rust-fetch-fixture rust-execute-dry-run-fixture rust-exec-dry-run-fixture
 
 validate: test
 	@echo "OK: validate"
@@ -47,3 +47,15 @@ rust-execute-dry-run-fixture: rust-fetch-fixture
 	  --evidence /tmp/nlboot-evidence \
 	  --i-understand-this-mutates-host
 	test -f /tmp/nlboot-evidence/pre-exec-proof.json
+
+rust-exec-dry-run-fixture: rust-execute-dry-run-fixture
+	cd rust/nlboot-client && cargo run -- execute \
+	  --plan /tmp/nlboot-fixture-plan.json \
+	  --cache /tmp/nlboot-cache \
+	  --adapter linux-kexec \
+	  --exec \
+	  --dry-run \
+	  --evidence /tmp/nlboot-evidence \
+	  --i-understand-this-mutates-host \
+	  --i-understand-this-reboots-host
+	test -f /tmp/nlboot-evidence/exec-proof.json
