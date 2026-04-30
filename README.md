@@ -1,30 +1,56 @@
 # nlboot
 
-`nlboot` is the SourceOS network/live/recovery boot protocol reference implementation.
+`nlboot` is the SourceOS network/live/recovery boot protocol reference implementation and Rust production-client lane.
 
-This repository implements the safe planning core for the SourceOS / SociOS boot and recovery lane. It is not yet a full bootloader and deliberately does not execute host mutation in this tranche.
+This repository now contains two layers:
+
+- Python reference planner and conformance harness.
+- Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, and gated Linux kexec load-only handoff.
+
+NLBoot is not scoped to one machine. The M2 path is the first-class proof target because it is the first real machine we are proving on. The portable protocol must also support generic UEFI/iPXE, Purism/Linux-first hardware, and VM/bootstrap targets.
 
 ## Stance
 
-NLBoot is platform-portable. The M2 path is the first-class proof target because it is the first real machine we are proving on, but NLBoot is not scoped to one device.
+NLBoot is platform-portable.
 
-The current Python implementation remains the reference planner, conformance harness, and fast iteration surface. The production boot/recovery client should mature in Rust under `rust/nlboot-client`.
+The Python implementation remains the reference planner, conformance harness, and fast iteration surface. The production boot/recovery client matures in Rust under `rust/nlboot-client`.
 
-See `docs/RUST_STANCE_AND_MATURITY.md` for the language and maturity plan.
+See:
 
-## What this slice does
+- `docs/RUST_STANCE_AND_MATURITY.md`
+- `docs/EXECUTION_BOUNDARY.md`
+- `docs/USABLE_MVP_GAP.md`
+- `docs/PLATFORM_ADAPTER_MATRIX.md`
 
-- validates signed-boot-manifest-shaped objects before planning boot/recovery
-- verifies RSA-PSS/SHA-256 manifest signatures against a trusted-key document in the Python reference planner
-- validates one-time enrollment token intent, expiry, audience, and release/boot-release binding
-- produces a boot plan as JSON
-- records `execute=false` in produced plans
-- emits SourceOS control-plane metadata in boot plans:
-  - `policy_ref`
-  - `allowed_operations`
-  - `proof_requirements`
-  - `offline_fallback`
-- never downloads artifacts, writes disks, calls `kexec`, or mutates a host in this reference slice
+## What is implemented now
+
+- Signed boot-manifest parsing.
+- RSA-PSS/SHA-256 manifest verification in Python.
+- RSA-PSS/SHA-256 manifest verification in Rust.
+- One-time enrollment token validation.
+- `BootPlan` JSON output with `execute=false`.
+- `plan --out` for durable plan records.
+- Artifact map fixture.
+- Local/HTTP artifact fetch path.
+- SHA-256 artifact verification.
+- Content-addressed cache writes.
+- Evidence output for artifact cache records.
+- Gated `linux-kexec --load-only` execution path.
+- Dry-run execution proof for CI and local validation.
+- Refusal records for blocked execution paths.
+
+## What is still intentionally gated
+
+The production client does not yet implement:
+
+- `kexec --exec` jump;
+- installer disk writes;
+- rollback execution;
+- Apple Silicon boot entry mutation;
+- host repair actions;
+- persistent enrollment-secret storage.
+
+Those operations are host mutation and require explicit platform adapters, evidence emission, and review.
 
 ## Protocol objects
 
@@ -64,54 +90,64 @@ See `docs/RUST_STANCE_AND_MATURITY.md` for the language and maturity plan.
 - offline fallback posture
 - `execute=false`
 
-The planner is intentionally conservative. It creates an authorized plan record, not a host-mutating execution path.
+## Usable MVP flow
 
-## Rust production-client lane
-
-The Rust lane lives under `rust/nlboot-client`.
-
-Current target:
+Run the full local usable-MVP fixture path:
 
 ```bash
-make rust-check
-make rust-run-fixture
+make rust-execute-dry-run-fixture
 ```
 
-The Rust scaffold validates manifest shape and token binding and emits an `execute=false` plan. RSA-PSS/SHA-256 signature verification parity is required before Rust is production-ready.
+That target performs:
 
-## M2 demo fixture
+1. signed manifest and token validation;
+2. plan output to `/tmp/nlboot-fixture-plan.json`;
+3. artifact fetch/copy through `examples/artifact_map.recovery.json`;
+4. SHA-256 verification;
+5. content-addressed cache write under `/tmp/nlboot-cache`;
+6. evidence output under `/tmp/nlboot-evidence`;
+7. dry-run `linux-kexec --load-only` proof with explicit host-mutation acknowledgement.
 
-The repository carries a side-effect-free M2 recovery fixture under `examples/`:
-
-- `signed_boot_manifest.recovery.json`
-- `enrollment_token.recovery.json`
-- `trusted_keys.recovery.json`
-
-Run it through the Python reference planner:
+Equivalent manual flow:
 
 ```bash
-python3 -m pip install -e .
-nlboot-plan \
-  --manifest examples/signed_boot_manifest.recovery.json \
-  --token examples/enrollment_token.recovery.json \
-  --trusted-keys examples/trusted_keys.recovery.json \
+cd rust/nlboot-client
+
+cargo run -- plan \
+  --manifest ../../examples/signed_boot_manifest.recovery.json \
+  --token ../../examples/enrollment_token.recovery.json \
+  --trusted-keys ../../examples/trusted_keys.recovery.json \
   --require-fips \
-  --now 2026-04-26T14:35:00Z
+  --now 2026-04-26T14:35:00Z \
+  --out /tmp/nlboot-fixture-plan.json
+
+cargo run -- fetch \
+  --plan /tmp/nlboot-fixture-plan.json \
+  --artifact-map ../../examples/artifact_map.recovery.json \
+  --cache /tmp/nlboot-cache \
+  --evidence /tmp/nlboot-evidence
+
+cargo run -- execute \
+  --plan /tmp/nlboot-fixture-plan.json \
+  --cache /tmp/nlboot-cache \
+  --adapter linux-kexec \
+  --load-only \
+  --dry-run \
+  --evidence /tmp/nlboot-evidence \
+  --i-understand-this-mutates-host
 ```
 
-Run it through the Rust scaffold:
-
-```bash
-make rust-run-fixture
-```
-
-Both commands emit safe plans only. Later implementation tranches can add verified artifact fetching and host execution behind explicit policy gates.
+A real `kexec --load` path removes `--dry-run` and must run with root or equivalent capability. `kexec --exec` is intentionally not implemented yet.
 
 ## Validation
 
 ```bash
 make validate
 make rust-check
+make rust-test
+make rust-run-fixture
+make rust-fetch-fixture
+make rust-execute-dry-run-fixture
 ```
 
-The GitHub Actions validation lane runs Python reference validation and Rust scaffold checks.
+The GitHub Actions validation lane runs Python reference validation and the Rust usable-MVP fixture path.
