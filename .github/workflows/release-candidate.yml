@@ -1,0 +1,98 @@
+name: nlboot release candidate
+
+on:
+  pull_request:
+    paths:
+      - "rust/**"
+      - "examples/**"
+      - "docs/**"
+      - "Makefile"
+      - "README.md"
+      - ".github/workflows/release-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
+jobs:
+  release-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+
+      - name: Run validation suite
+        run: |
+          make validate
+          make rust-check
+          make rust-test
+          make rust-run-fixture
+          make rust-fetch-fixture
+          make rust-execute-dry-run-fixture
+          make rust-exec-dry-run-fixture
+          make rust-apple-m2-dry-run-fixture
+
+      - name: Generate lockfile
+        run: cd rust/nlboot-client && cargo generate-lockfile
+
+      - name: Build locked release candidate
+        run: cd rust/nlboot-client && cargo build --locked --release --target x86_64-unknown-linux-gnu
+
+      - name: Generate dependency metadata
+        run: |
+          mkdir -p dist/rc
+          cp rust/nlboot-client/Cargo.lock dist/rc/Cargo.lock
+          cd rust/nlboot-client
+          cargo metadata --locked --format-version 1 > ../../dist/rc/cargo-metadata.json
+
+      - name: Assemble release-candidate bundle
+        run: |
+          cp rust/nlboot-client/target/x86_64-unknown-linux-gnu/release/nlboot-client dist/rc/nlboot-client
+          cp README.md dist/rc/README.md
+          cp docs/RELEASE_AND_INSTALL.md dist/rc/RELEASE_AND_INSTALL.md
+          cp docs/RELEASE_READINESS_CHECKLIST.md dist/rc/RELEASE_READINESS_CHECKLIST.md
+          cat > dist/rc/release-candidate-manifest.json <<EOF
+          {
+            "artifact": "nlboot-client",
+            "kind": "release-candidate",
+            "target": "x86_64-unknown-linux-gnu",
+            "commit": "${GITHUB_SHA}",
+            "sourceRepository": "${GITHUB_REPOSITORY}",
+            "publishesRelease": false,
+            "validation": [
+              "make validate",
+              "make rust-check",
+              "make rust-test",
+              "make rust-run-fixture",
+              "make rust-fetch-fixture",
+              "make rust-execute-dry-run-fixture",
+              "make rust-exec-dry-run-fixture",
+              "make rust-apple-m2-dry-run-fixture"
+            ],
+            "hostMutationDefault": "refuse-unless-explicitly-acknowledged",
+            "appleSiliconAdapter": "dry-run-evidence-only",
+            "cargoLockIncluded": true,
+            "dependencyMetadataIncluded": true
+          }
+          EOF
+          tar -czf nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz -C dist/rc .
+          sha256sum nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz > nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz.sha256
+
+      - name: Attest release-candidate provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz
+
+      - name: Upload release-candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlboot-client-release-candidate
+          path: |
+            nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz
+            nlboot-client-rc-x86_64-unknown-linux-gnu.tar.gz.sha256
