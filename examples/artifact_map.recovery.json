@@ -1,0 +1,29 @@
+{
+  "artifact_map_id": "urn:srcos:artifact-map:m2-demo-recovery-2026-04-26",
+  "artifacts": [
+    {
+      "artifact_ref": "urn:srcos:artifact:m2-demo-recovery-kernel-sha256-0f3b6d7f",
+      "kind": "kernel",
+      "source": "artifacts/m2-demo-recovery-kernel.txt",
+      "sha256": "ee9842f9ed1f696fd429d1dc5db9ed6f5fd9c6dc3ea99336882665f5a4b7c395",
+      "size_bytes": 38,
+      "content_type": "text/plain"
+    },
+    {
+      "artifact_ref": "urn:srcos:artifact:m2-demo-recovery-initrd-sha256-08f4c82e",
+      "kind": "initrd",
+      "source": "artifacts/m2-demo-recovery-initrd.txt",
+      "sha256": "88b7a1b2e10e7512797a62086004ab82811b28ee95fe5dd7e4c184f3c4f793c7",
+      "size_bytes": 38,
+      "content_type": "text/plain"
+    },
+    {
+      "artifact_ref": "urn:srcos:artifact:m2-demo-recovery-rootfs-sha256-5f4dcc3b",
+      "kind": "rootfs",
+      "source": "artifacts/m2-demo-recovery-rootfs.txt",
+      "sha256": "18e2b302ceef8455c58474af6f025e8a3e4fd3ba2ae3616ff18877cb474d9235",
+      "size_bytes": 38,
+      "content_type": "text/plain"
+    }
+  ]
+}
