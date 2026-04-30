@@ -1,15 +1,19 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
+use ring::signature;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
+const FIPS_READY_ALGORITHM: &str = "rsa-pss-sha256";
+const FIPS_READY_PROFILE: &str = "fips-140-3-compatible";
+
 #[derive(Parser, Debug)]
 #[command(name = "nlboot-client")]
-#[command(about = "NLBoot Rust safe planner scaffold", long_about = None)]
+#[command(about = "NLBoot Rust safe planner", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -65,6 +69,28 @@ struct Audience {
     subject_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct TrustedKeyDocument {
+    keys: Vec<TrustedKey>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TrustedKey {
+    key_ref: String,
+    algorithm: String,
+    public_key_pem: String,
+    #[serde(default = "default_active_status")]
+    status: String,
+    not_before: Option<DateTime<Utc>>,
+    not_after: Option<DateTime<Utc>>,
+    revoked_at: Option<DateTime<Utc>>,
+    revocation_reason: Option<String>,
+}
+
+fn default_active_status() -> String {
+    "active".to_string()
+}
+
 #[derive(Debug, Serialize)]
 struct BootPlan {
     action: String,
@@ -109,7 +135,16 @@ fn read_value(path: &PathBuf) -> Result<Value> {
     Ok(parsed)
 }
 
-fn validate_manifest(manifest: &SignedBootManifest, require_fips: bool, trusted_keys: &Value) -> Result<()> {
+fn canonical_manifest_payload(manifest_value: &Value) -> Result<Vec<u8>> {
+    let mut unsigned = manifest_value
+        .as_object()
+        .cloned()
+        .context("manifest must be a JSON object")?;
+    unsigned.remove("signature_hex");
+    Ok(serde_json::to_vec(&Value::Object(unsigned))?)
+}
+
+fn validate_manifest_shape(manifest: &SignedBootManifest, require_fips: bool) -> Result<()> {
     if manifest.manifest_id.trim().is_empty() {
         anyhow::bail!("manifest_id must be non-empty");
     }
@@ -132,16 +167,88 @@ fn validate_manifest(manifest: &SignedBootManifest, require_fips: bool, trusted_
         anyhow::bail!("signature_ref must be a SourceOS signature URN");
     }
     if require_fips {
-        if manifest.signature_algorithm != "rsa-pss-sha256" || manifest.crypto_profile != "fips-140-3-compatible" {
+        if manifest.signature_algorithm != FIPS_READY_ALGORITHM || manifest.crypto_profile != FIPS_READY_PROFILE {
             anyhow::bail!("require-fips requires rsa-pss-sha256 and fips-140-3-compatible profile");
         }
     }
     if manifest.signer_ref.trim().is_empty() || manifest.signature_hex.trim().is_empty() {
         anyhow::bail!("manifest signer_ref and signature_hex must be non-empty");
     }
-    if trusted_keys.get("trusted_keys").is_none() && trusted_keys.get("keys").is_none() {
-        anyhow::bail!("trusted key document must contain trusted_keys or keys");
+    Ok(())
+}
+
+fn validate_trusted_key_lifecycle(key: &TrustedKey, now: DateTime<Utc>) -> Result<()> {
+    if key.key_ref.trim().is_empty() {
+        anyhow::bail!("trusted key requires key_ref");
     }
+    if key.algorithm != FIPS_READY_ALGORITHM {
+        anyhow::bail!("trusted key must use rsa-pss-sha256");
+    }
+    if !key.public_key_pem.contains("BEGIN PUBLIC KEY") {
+        anyhow::bail!("trusted key requires PEM public key");
+    }
+    if !matches!(key.status.as_str(), "active" | "retired" | "revoked") {
+        anyhow::bail!("trusted key status must be active, retired, or revoked");
+    }
+    if key.status == "revoked" || key.revoked_at.is_some() {
+        anyhow::bail!("trusted key {:?} is revoked", key.key_ref);
+    }
+    if key.status != "active" {
+        anyhow::bail!("trusted key {:?} is not active", key.key_ref);
+    }
+    if let Some(not_before) = key.not_before {
+        if now < not_before {
+            anyhow::bail!("trusted key {:?} is not active yet", key.key_ref);
+        }
+    }
+    if let Some(not_after) = key.not_after {
+        if now >= not_after {
+            anyhow::bail!("trusted key {:?} is expired", key.key_ref);
+        }
+    }
+    if let Some(reason) = &key.revocation_reason {
+        if reason.trim().is_empty() {
+            anyhow::bail!("revocation_reason must be non-empty when present");
+        }
+    }
+    Ok(())
+}
+
+fn trusted_key_for<'a>(trusted_keys: &'a TrustedKeyDocument, signer_ref: &str, now: DateTime<Utc>) -> Result<&'a TrustedKey> {
+    for key in &trusted_keys.keys {
+        if key.key_ref == signer_ref {
+            validate_trusted_key_lifecycle(key, now)?;
+            return Ok(key);
+        }
+    }
+    anyhow::bail!("no trusted key for signer_ref={:?}", signer_ref);
+}
+
+fn verify_rsa_pss_sha256(payload: &[u8], signature_hex: &str, key: &TrustedKey) -> Result<()> {
+    let signature_bytes = hex::decode(signature_hex).context("signature_hex must be hex")?;
+    let pem = pem::parse(&key.public_key_pem).context("failed to parse trusted key PEM")?;
+    let public_key_der = pem.contents();
+    let verifier = signature::UnparsedPublicKey::new(&signature::RSA_PSS_2048_8192_SHA256, public_key_der);
+    verifier
+        .verify(payload, &signature_bytes)
+        .map_err(|_| anyhow::anyhow!("signature verification failed"))?;
+    Ok(())
+}
+
+fn validate_manifest(
+    manifest: &SignedBootManifest,
+    manifest_value: &Value,
+    require_fips: bool,
+    trusted_keys: &TrustedKeyDocument,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    validate_manifest_shape(manifest, require_fips)?;
+    let trusted_key = trusted_key_for(trusted_keys, &manifest.signer_ref, now)?;
+    if trusted_key.algorithm != manifest.signature_algorithm {
+        anyhow::bail!("trusted key algorithm does not match manifest");
+    }
+    let payload = canonical_manifest_payload(manifest_value)?;
+    verify_rsa_pss_sha256(&payload, &manifest.signature_hex, trusted_key)?;
     Ok(())
 }
 
@@ -157,6 +264,9 @@ fn validate_token(token: &EnrollmentToken, manifest: &SignedBootManifest, now: D
     }
     if now >= token.expires_at {
         anyhow::bail!("token is expired");
+    }
+    if token.issued_at >= token.expires_at {
+        anyhow::bail!("issued_at must be before expires_at");
     }
     if !token.one_time_use {
         anyhow::bail!("token must be one-time use");
@@ -179,6 +289,11 @@ fn validate_token(token: &EnrollmentToken, manifest: &SignedBootManifest, now: D
     }
     if token.audience.subject_kind.trim().is_empty() {
         anyhow::bail!("audience.subject_kind must be non-empty");
+    }
+    if let Some(subject_id) = &token.audience.subject_id {
+        if subject_id.trim().is_empty() {
+            anyhow::bail!("audience.subject_id must be non-empty when present");
+        }
     }
     Ok(())
 }
@@ -259,17 +374,19 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Plan { manifest, token, trusted_keys, require_fips, now } => {
-            let manifest_doc: SignedBootManifest = read_json(&manifest)?;
+            let manifest_value = read_value(&manifest)?;
+            let manifest_doc: SignedBootManifest = serde_json::from_value(manifest_value.clone())
+                .with_context(|| format!("failed to parse manifest object in {}", manifest.display()))?;
             let token_doc: EnrollmentToken = read_json(&token)?;
-            let trusted_keys_doc = read_value(&trusted_keys)?;
+            let trusted_keys_doc: TrustedKeyDocument = read_json(&trusted_keys)?;
             let now = parse_now(now)?;
-            validate_manifest(&manifest_doc, require_fips, &trusted_keys_doc)?;
+            validate_manifest(&manifest_doc, &manifest_value, require_fips, &trusted_keys_doc, now)?;
             validate_token(&token_doc, &manifest_doc, now)?;
             let plan = build_plan(manifest_doc, token_doc);
             let output = Output {
                 ok: true,
                 plan,
-                implementation_note: "Rust scaffold validates manifest shape and token binding; RSA-PSS signature verification parity is required before production use.".to_string(),
+                implementation_note: "Rust planner verifies RSA-PSS/SHA-256 manifest signatures and remains non-mutating with execute=false.".to_string(),
             };
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
