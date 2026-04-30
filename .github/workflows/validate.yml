@@ -69,3 +69,5 @@ jobs:
         run: make rust-execute-dry-run-fixture
       - name: Run Rust final handoff dry-run fixture
         run: make rust-exec-dry-run-fixture
+      - name: Run Rust Apple adapter dry-run fixture
+        run: make rust-apple-m2-dry-run-fixture
