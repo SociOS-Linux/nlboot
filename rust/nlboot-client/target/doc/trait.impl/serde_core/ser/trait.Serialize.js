@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["nlboot_client",[["impl <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\" title=\"trait serde_core::ser::Serialize\">Serialize</a> for <a class=\"struct\" href=\"nlboot_client/struct.ArtifactCacheRecord.html\" title=\"struct nlboot_client::ArtifactCacheRecord\">ArtifactCacheRecord</a>",0],["impl <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\" title=\"trait serde_core::ser::Serialize\">Serialize</a> for <a class=\"struct\" href=\"nlboot_client/struct.BootPlan.html\" title=\"struct nlboot_client::BootPlan\">BootPlan</a>",0],["impl <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\" title=\"trait serde_core::ser::Serialize\">Serialize</a> for <a class=\"struct\" href=\"nlboot_client/struct.CachedArtifactRecord.html\" title=\"struct nlboot_client::CachedArtifactRecord\">CachedArtifactRecord</a>",0],["impl <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\" title=\"trait serde_core::ser::Serialize\">Serialize</a> for <a class=\"struct\" href=\"nlboot_client/struct.OfflineFallback.html\" title=\"struct nlboot_client::OfflineFallback\">OfflineFallback</a>",0],["impl <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\" title=\"trait serde_core::ser::Serialize\">Serialize</a> for <a class=\"struct\" href=\"nlboot_client/struct.PlanOutput.html\" title=\"struct nlboot_client::PlanOutput\">PlanOutput</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1560]}
