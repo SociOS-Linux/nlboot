@@ -1,4 +1,4 @@
-.PHONY: validate test rust-check rust-run-fixture
+.PHONY: validate test rust-check rust-test rust-run-fixture
 
 validate: test
 	@echo "OK: validate"
@@ -9,6 +9,9 @@ test:
 
 rust-check:
 	cd rust/nlboot-client && cargo check
+
+rust-test:
+	cd rust/nlboot-client && cargo test
 
 rust-run-fixture:
 	cd rust/nlboot-client && cargo run -- plan \
