@@ -35,8 +35,7 @@ rust-fetch-fixture:
 	  --artifact-map ../../examples/artifact_map.recovery.json \
 	  --cache /tmp/nlboot-cache \
 	  --evidence /tmp/nlboot-evidence
-
-test -f /tmp/nlboot-evidence/artifact-cache-record.json
+	test -f /tmp/nlboot-evidence/artifact-cache-record.json
 
 rust-execute-dry-run-fixture: rust-fetch-fixture
 	cd rust/nlboot-client && cargo run -- execute \
@@ -47,5 +46,4 @@ rust-execute-dry-run-fixture: rust-fetch-fixture
 	  --dry-run \
 	  --evidence /tmp/nlboot-evidence \
 	  --i-understand-this-mutates-host
-
-test -f /tmp/nlboot-evidence/pre-exec-proof.json
+	test -f /tmp/nlboot-evidence/pre-exec-proof.json
