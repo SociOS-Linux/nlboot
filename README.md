@@ -5,7 +5,7 @@
 This repository now contains two layers:
 
 - Python reference planner and conformance harness.
-- Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, and gated Linux kexec load-only handoff.
+- Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, gated Linux load-only handoff, and final handoff dry-run proof.
 
 NLBoot is not scoped to one machine. The M2 path is the first-class proof target because it is the first real machine we are proving on. The portable protocol must also support generic UEFI/iPXE, Purism/Linux-first hardware, and VM/bootstrap targets.
 
@@ -21,6 +21,7 @@ See:
 - `docs/EXECUTION_BOUNDARY.md`
 - `docs/USABLE_MVP_GAP.md`
 - `docs/PLATFORM_ADAPTER_MATRIX.md`
+- `docs/APPLE_SILICON_M2_ADAPTER_PLAN.md`
 
 ## What is implemented now
 
@@ -36,14 +37,14 @@ See:
 - Content-addressed cache writes.
 - Evidence output for artifact cache records.
 - Gated `linux-kexec --load-only` execution path.
-- Dry-run execution proof for CI and local validation.
+- Gated `linux-kexec --exec` path requiring prior load-only proof, explicit host-mutation acknowledgement, and explicit reboot acknowledgement.
+- Dry-run proofs for CI and local validation.
 - Refusal records for blocked execution paths.
 
 ## What is still intentionally gated
 
 The production client does not yet implement:
 
-- `kexec --exec` jump;
 - installer disk writes;
 - rollback execution;
 - Apple Silicon boot entry mutation;
@@ -95,7 +96,7 @@ Those operations are host mutation and require explicit platform adapters, evide
 Run the full local usable-MVP fixture path:
 
 ```bash
-make rust-execute-dry-run-fixture
+make rust-exec-dry-run-fixture
 ```
 
 That target performs:
@@ -106,7 +107,8 @@ That target performs:
 4. SHA-256 verification;
 5. content-addressed cache write under `/tmp/nlboot-cache`;
 6. evidence output under `/tmp/nlboot-evidence`;
-7. dry-run `linux-kexec --load-only` proof with explicit host-mutation acknowledgement.
+7. dry-run `linux-kexec --load-only` proof with explicit host-mutation acknowledgement;
+8. dry-run `linux-kexec --exec` proof with explicit host-mutation and reboot acknowledgements.
 
 Equivalent manual flow:
 
@@ -135,9 +137,19 @@ cargo run -- execute \
   --dry-run \
   --evidence /tmp/nlboot-evidence \
   --i-understand-this-mutates-host
+
+cargo run -- execute \
+  --plan /tmp/nlboot-fixture-plan.json \
+  --cache /tmp/nlboot-cache \
+  --adapter linux-kexec \
+  --exec \
+  --dry-run \
+  --evidence /tmp/nlboot-evidence \
+  --i-understand-this-mutates-host \
+  --i-understand-this-reboots-host
 ```
 
-A real `kexec --load` path removes `--dry-run` and must run with root or equivalent capability. `kexec --exec` is intentionally not implemented yet.
+A real `kexec --load` path removes `--dry-run` and must run with root or equivalent capability. A real `kexec --exec` path also requires the prior load-only proof and `--i-understand-this-reboots-host`.
 
 ## Validation
 
@@ -148,6 +160,7 @@ make rust-test
 make rust-run-fixture
 make rust-fetch-fixture
 make rust-execute-dry-run-fixture
+make rust-exec-dry-run-fixture
 ```
 
 The GitHub Actions validation lane runs Python reference validation and the Rust usable-MVP fixture path.
