@@ -49,7 +49,7 @@ enum Commands {
         #[arg(long)]
         evidence: PathBuf,
     },
-    /// Execute a gated platform handoff. The first usable path supports linux-kexec load-only.
+    /// Execute a gated platform handoff. The first usable adapter supports linux-kexec.
     Execute {
         #[arg(long)]
         plan: PathBuf,
@@ -65,6 +65,8 @@ enum Commands {
         evidence: PathBuf,
         #[arg(long = "i-understand-this-mutates-host", default_value_t = false)]
         mutation_ack: bool,
+        #[arg(long = "i-understand-this-reboots-host", default_value_t = false)]
+        reboot_ack: bool,
         #[arg(long = "dry-run", default_value_t = false)]
         dry_run: bool,
     },
@@ -566,24 +568,19 @@ fn is_root() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
-fn execute_linux_kexec_load_only(plan_path: PathBuf, cache: PathBuf, evidence: PathBuf, mutation_ack: bool, dry_run: bool) -> Result<()> {
-    if !mutation_ack {
-        write_refusal(&evidence, "missing explicit host-mutation acknowledgement");
-        anyhow::bail!("refusing host mutation without --i-understand-this-mutates-host");
-    }
-    if !dry_run && !is_root() {
-        write_refusal(&evidence, "linux-kexec load-only requires root or equivalent capability");
-        anyhow::bail!("linux-kexec load-only requires root or equivalent capability");
-    }
-    let plan = load_plan(&plan_path)?;
+fn load_cache_record(evidence: &Path) -> Result<ArtifactCacheRecord> {
     let cache_record_path = evidence.join("artifact-cache-record.json");
-    let cache_record: ArtifactCacheRecord = read_json(&cache_record_path)
-        .with_context(|| format!("missing artifact cache evidence at {}", cache_record_path.display()))?;
-    let kernel = artifact_record_by_kind(&cache_record, "kernel")?;
-    let initrd = artifact_record_by_kind(&cache_record, "initrd")?;
+    read_json(&cache_record_path)
+        .with_context(|| format!("missing artifact cache evidence at {}", cache_record_path.display()))
+}
+
+fn verify_cached_kernel_initrd(cache: &Path, evidence: &Path) -> Result<(CachedArtifactRecord, CachedArtifactRecord)> {
+    let cache_record = load_cache_record(evidence)?;
+    let kernel = artifact_record_by_kind(&cache_record, "kernel")?.clone();
+    let initrd = artifact_record_by_kind(&cache_record, "initrd")?.clone();
     let kernel_path = PathBuf::from(&kernel.cache_path);
     let initrd_path = PathBuf::from(&initrd.cache_path);
-    if !kernel_path.starts_with(&cache) || !initrd_path.starts_with(&cache) {
+    if !kernel_path.starts_with(cache) || !initrd_path.starts_with(cache) {
         anyhow::bail!("cached artifact path is outside provided cache directory");
     }
     for artifact in [&kernel, &initrd] {
@@ -593,6 +590,30 @@ fn execute_linux_kexec_load_only(plan_path: PathBuf, cache: PathBuf, evidence: P
             anyhow::bail!("cached artifact hash mismatch for {}", artifact.artifact_ref);
         }
     }
+    Ok((kernel, initrd))
+}
+
+fn require_mutation_ack(evidence: &Path, mutation_ack: bool) -> Result<()> {
+    if !mutation_ack {
+        write_refusal(evidence, "missing explicit host-mutation acknowledgement");
+        anyhow::bail!("refusing host mutation without --i-understand-this-mutates-host");
+    }
+    Ok(())
+}
+
+fn require_root_or_dry_run(evidence: &Path, dry_run: bool, operation: &str) -> Result<()> {
+    if !dry_run && !is_root() {
+        write_refusal(evidence, &format!("{operation} requires root or equivalent capability"));
+        anyhow::bail!("{operation} requires root or equivalent capability");
+    }
+    Ok(())
+}
+
+fn execute_linux_kexec_load_only(plan_path: PathBuf, cache: PathBuf, evidence: PathBuf, mutation_ack: bool, dry_run: bool) -> Result<()> {
+    require_mutation_ack(&evidence, mutation_ack)?;
+    require_root_or_dry_run(&evidence, dry_run, "linux-kexec load-only")?;
+    let plan = load_plan(&plan_path)?;
+    let (kernel, initrd) = verify_cached_kernel_initrd(&cache, &evidence)?;
 
     let command = vec![
         "kexec".to_string(),
@@ -635,6 +656,52 @@ fn execute_linux_kexec_load_only(plan_path: PathBuf, cache: PathBuf, evidence: P
     Ok(())
 }
 
+fn execute_linux_kexec_exec(plan_path: PathBuf, cache: PathBuf, evidence: PathBuf, mutation_ack: bool, reboot_ack: bool, dry_run: bool) -> Result<()> {
+    require_mutation_ack(&evidence, mutation_ack)?;
+    if !reboot_ack {
+        write_refusal(&evidence, "missing explicit reboot acknowledgement");
+        anyhow::bail!("refusing kexec --exec without --i-understand-this-reboots-host");
+    }
+    require_root_or_dry_run(&evidence, dry_run, "linux-kexec exec")?;
+    let plan = load_plan(&plan_path)?;
+    let _ = verify_cached_kernel_initrd(&cache, &evidence)?;
+    let pre_exec_path = evidence.join("pre-exec-proof.json");
+    if !pre_exec_path.exists() {
+        write_refusal(&evidence, "missing pre-exec-proof.json from prior load-only phase");
+        anyhow::bail!("missing pre-exec-proof.json from prior load-only phase");
+    }
+
+    let command = vec!["kexec".to_string(), "--exec".to_string()];
+    let proof = json!({
+        "ok": true,
+        "kind": "exec-proof",
+        "created_at": Utc::now(),
+        "adapter": "linux-kexec",
+        "mode": "exec",
+        "dry_run": dry_run,
+        "plan_manifest_id": plan.manifest_id,
+        "boot_release_set_id": plan.boot_release_set_id,
+        "release_set_ref": plan.release_set_ref,
+        "command": command,
+        "execute_exec": true
+    });
+    write_json(&evidence.join("exec-proof.json"), &proof)?;
+
+    if dry_run {
+        println!("{}", serde_json::to_string_pretty(&proof)?);
+        return Ok(());
+    }
+
+    let status = ProcessCommand::new("kexec")
+        .arg("--exec")
+        .status()
+        .context("failed to invoke kexec --exec")?;
+    if !status.success() {
+        anyhow::bail!("kexec --exec failed with status {status}");
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -661,20 +728,23 @@ fn main() -> Result<()> {
         Commands::Fetch { plan, artifact_map, cache, evidence } => {
             fetch_artifacts(plan, artifact_map, cache, evidence)?;
         }
-        Commands::Execute { plan, cache, adapter, load_only, exec_now, evidence, mutation_ack, dry_run } => {
-            if exec_now {
-                write_refusal(&evidence, "kexec --exec is not implemented before load-only proof review");
-                anyhow::bail!("--exec is not implemented before load-only proof review");
-            }
-            if !load_only {
-                write_refusal(&evidence, "execute currently requires --load-only");
-                anyhow::bail!("execute currently requires --load-only");
+        Commands::Execute { plan, cache, adapter, load_only, exec_now, evidence, mutation_ack, reboot_ack, dry_run } => {
+            if load_only && exec_now {
+                write_refusal(&evidence, "choose either --load-only or --exec, not both");
+                anyhow::bail!("choose either --load-only or --exec, not both");
             }
             if adapter != "linux-kexec" {
                 write_refusal(&evidence, "unsupported platform adapter");
                 anyhow::bail!("unsupported adapter {adapter:?}; supported: linux-kexec");
             }
-            execute_linux_kexec_load_only(plan, cache, evidence, mutation_ack, dry_run)?;
+            if load_only {
+                execute_linux_kexec_load_only(plan, cache, evidence, mutation_ack, dry_run)?;
+            } else if exec_now {
+                execute_linux_kexec_exec(plan, cache, evidence, mutation_ack, reboot_ack, dry_run)?;
+            } else {
+                write_refusal(&evidence, "execute requires --load-only or --exec");
+                anyhow::bail!("execute requires --load-only or --exec");
+            }
         }
     }
     Ok(())
