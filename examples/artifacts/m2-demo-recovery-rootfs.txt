@@ -1,0 +1,1 @@
+nlboot fixture rootfs for m2 recovery
