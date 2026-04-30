@@ -1,4 +1,4 @@
-.PHONY: validate test rust-check rust-test rust-run-fixture rust-fetch-fixture rust-execute-dry-run-fixture rust-exec-dry-run-fixture
+.PHONY: validate test rust-check rust-test rust-run-fixture rust-fetch-fixture rust-execute-dry-run-fixture rust-exec-dry-run-fixture rust-apple-m2-dry-run-fixture
 
 validate: test
 	@echo "OK: validate"
@@ -59,3 +59,15 @@ rust-exec-dry-run-fixture: rust-execute-dry-run-fixture
 	  --i-understand-this-mutates-host \
 	  --i-understand-this-reboots-host
 	test -f /tmp/nlboot-evidence/exec-proof.json
+
+rust-apple-m2-dry-run-fixture: rust-fetch-fixture
+	cd rust/nlboot-client && cargo run -- execute \
+	  --plan /tmp/nlboot-fixture-plan.json \
+	  --cache /tmp/nlboot-cache \
+	  --adapter apple-silicon-m2 \
+	  --load-only \
+	  --dry-run \
+	  --evidence /tmp/nlboot-evidence \
+	  --i-understand-this-mutates-host
+	test -f /tmp/nlboot-evidence/adapter-plan-record.json
+	test -f /tmp/nlboot-evidence/boot-entry-record.json
