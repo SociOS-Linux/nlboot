@@ -34,6 +34,7 @@ The release-candidate workflow must produce:
 - `release-candidate-manifest.json` inside the archive
 - `Cargo.lock` inside the archive
 - `cargo-metadata.json` inside the archive
+- `sbom.spdx.json` inside the archive
 - provenance attestation where GitHub supports it
 
 Release-candidate artifacts are for validation only. They must not be treated as stable releases and must not drive Homebrew formula publication.
@@ -48,7 +49,10 @@ The release workflow must produce:
 - combined `SHA256SUMS`
 - `release-manifest.json` inside each archive
 - `Cargo.lock` inside each archive
-- dependency metadata or SBOM artifact where available
+- `cargo-metadata.json` inside each archive
+- `sbom.spdx.json` inside each archive
+- `nlboot-client-<version>-<target>-sbom.spdx.json`
+- `nlboot-client-<version>-<target>-sbom.spdx.json.sha256`
 - provenance attestation where GitHub supports it
 
 ## 4. Release manifest gate
@@ -64,7 +68,8 @@ Each release manifest must include:
 - host-mutation default posture;
 - Apple Silicon adapter posture;
 - Cargo lock inclusion flag;
-- dependency metadata inclusion flag.
+- dependency metadata inclusion flag;
+- SBOM inclusion flag.
 
 ## 5. Operator documentation gate
 
@@ -75,6 +80,7 @@ The release must reference:
 - `docs/RELEASE_AND_INSTALL.md`
 - `docs/EXECUTION_BOUNDARY.md`
 - `docs/APPLE_SILICON_M2_ADAPTER_CONTRACT.md`
+- `docs/OPERATOR_TEST_RELEASE_HANDOFF.md`
 
 The operator quickstart must describe dry-run proof only. Real host-changing operation must remain gated by explicit commands, root/capability, evidence records, and review.
 
@@ -97,6 +103,7 @@ The release is not SourceOS-integrated until:
 - `SourceOS-Linux/sourceos-spec` has canonical object schemas for NLBoot evidence records;
 - `SourceOS-Linux/sourceos-boot` has integration docs/fixtures consuming those objects;
 - `mdheller/socioprophet-web` can display mock NLBoot evidence records in the Vue shell;
+- `SourceOS-Linux/sourceos-devtools` can inspect or validate local NLBoot evidence records;
 - `SocioProphet/homebrew-prophet` has a formula/update path.
 
 ## 8. Risk boundary
@@ -120,7 +127,8 @@ An NLBoot operator-test release is complete when:
 - release-candidate workflow passes;
 - release workflow publishes archives and checksums;
 - provenance attestation is present or explicitly noted as unavailable;
-- dependency metadata or SBOM is present or explicitly deferred;
+- dependency metadata is present;
+- SBOM artifact is present;
 - release notes state exact supported and unsupported behaviors;
 - Homebrew formula PR exists or is merged;
-- SourceOS schema/boot/web integration issues are linked from the release notes.
+- SourceOS schema/boot/web/devtools integration issues are linked from the release notes.
