@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
-use ring::signature;
+use rsa::pkcs8::DecodePublicKey;
+use rsa::pss::{Signature, VerifyingKey};
+use rsa::signature::Verifier;
+use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -218,13 +221,29 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
+fn sort_value_keys(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map
+                .into_iter()
+                .map(|(k, v)| (k, sort_value_keys(v)))
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(entries.into_iter().collect())
+        }
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sort_value_keys).collect()),
+        other => other,
+    }
+}
+
 fn canonical_manifest_payload(manifest_value: &Value) -> Result<Vec<u8>> {
     let mut unsigned = manifest_value
         .as_object()
         .cloned()
         .context("manifest must be a JSON object")?;
     unsigned.remove("signature_hex");
-    Ok(serde_json::to_vec(&Value::Object(unsigned))?)
+    let sorted = sort_value_keys(Value::Object(unsigned));
+    Ok(serde_json::to_vec(&sorted)?)
 }
 
 fn validate_manifest_shape(manifest: &SignedBootManifest, require_fips: bool) -> Result<()> {
@@ -309,11 +328,13 @@ fn trusted_key_for<'a>(trusted_keys: &'a TrustedKeyDocument, signer_ref: &str, n
 
 fn verify_rsa_pss_sha256(payload: &[u8], signature_hex: &str, key: &TrustedKey) -> Result<()> {
     let signature_bytes = hex::decode(signature_hex).context("signature_hex must be hex")?;
-    let pem = pem::parse(key.public_key_pem.as_bytes()).context("failed to parse trusted key PEM")?;
-    let public_key_der = pem.contents();
-    let verifier = signature::UnparsedPublicKey::new(&signature::RSA_PSS_2048_8192_SHA256, public_key_der);
-    verifier
-        .verify(payload, &signature_bytes)
+    let public_key = RsaPublicKey::from_public_key_pem(&key.public_key_pem)
+        .context("failed to parse trusted key PEM")?;
+    let verifying_key = VerifyingKey::<Sha256>::new(public_key);
+    let sig = Signature::try_from(signature_bytes.as_slice())
+        .map_err(|e| anyhow::anyhow!("invalid signature bytes: {}", e))?;
+    verifying_key
+        .verify(payload, &sig)
         .map_err(|_| anyhow::anyhow!("signature verification failed"))?;
     Ok(())
 }
