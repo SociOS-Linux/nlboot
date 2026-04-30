@@ -5,7 +5,7 @@
 This repository now contains two layers:
 
 - Python reference planner and conformance harness.
-- Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, gated Linux load-only handoff, and final handoff dry-run proof.
+- Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, gated Linux handoff, and Apple Silicon M2 adapter dry-run proof.
 
 NLBoot is not scoped to one machine. The M2 path is the first-class proof target because it is the first real machine we are proving on. The portable protocol must also support generic UEFI/iPXE, Purism/Linux-first hardware, and VM/bootstrap targets.
 
@@ -22,6 +22,7 @@ See:
 - `docs/USABLE_MVP_GAP.md`
 - `docs/PLATFORM_ADAPTER_MATRIX.md`
 - `docs/APPLE_SILICON_M2_ADAPTER_PLAN.md`
+- `docs/APPLE_SILICON_M2_ADAPTER_CONTRACT.md`
 
 ## What is implemented now
 
@@ -36,10 +37,11 @@ See:
 - SHA-256 artifact verification.
 - Content-addressed cache writes.
 - Evidence output for artifact cache records.
-- Gated `linux-kexec --load-only` execution path.
+- Gated `linux-kexec --load-only` path.
 - Gated `linux-kexec --exec` path requiring prior load-only proof, explicit host-mutation acknowledgement, and explicit reboot acknowledgement.
+- Apple Silicon M2 dry-run adapter evidence path.
 - Dry-run proofs for CI and local validation.
-- Refusal records for blocked execution paths.
+- Refusal records for blocked paths.
 
 ## What is still intentionally gated
 
@@ -47,7 +49,7 @@ The production client does not yet implement:
 
 - installer disk writes;
 - rollback execution;
-- Apple Silicon boot entry mutation;
+- real Apple Silicon boot-entry changes;
 - host repair actions;
 - persistent enrollment-secret storage.
 
@@ -93,7 +95,7 @@ Those operations are host mutation and require explicit platform adapters, evide
 
 ## Usable MVP flow
 
-Run the full local usable-MVP fixture path:
+Run the generic Linux/Purism/VM local usable-MVP fixture path:
 
 ```bash
 make rust-exec-dry-run-fixture
@@ -110,46 +112,36 @@ That target performs:
 7. dry-run `linux-kexec --load-only` proof with explicit host-mutation acknowledgement;
 8. dry-run `linux-kexec --exec` proof with explicit host-mutation and reboot acknowledgements.
 
-Equivalent manual flow:
+Run the Apple Silicon M2 adapter dry-run proof:
+
+```bash
+make rust-apple-m2-dry-run-fixture
+```
+
+That target performs:
+
+1. signed manifest and token validation;
+2. artifact fetch/cache/evidence;
+3. Apple Silicon M2 adapter dry-run;
+4. `adapter-plan-record.json` output;
+5. `boot-entry-record.json` output.
+
+Equivalent manual M2 adapter dry-run:
 
 ```bash
 cd rust/nlboot-client
 
-cargo run -- plan \
-  --manifest ../../examples/signed_boot_manifest.recovery.json \
-  --token ../../examples/enrollment_token.recovery.json \
-  --trusted-keys ../../examples/trusted_keys.recovery.json \
-  --require-fips \
-  --now 2026-04-26T14:35:00Z \
-  --out /tmp/nlboot-fixture-plan.json
-
-cargo run -- fetch \
-  --plan /tmp/nlboot-fixture-plan.json \
-  --artifact-map ../../examples/artifact_map.recovery.json \
-  --cache /tmp/nlboot-cache \
-  --evidence /tmp/nlboot-evidence
-
 cargo run -- execute \
   --plan /tmp/nlboot-fixture-plan.json \
   --cache /tmp/nlboot-cache \
-  --adapter linux-kexec \
+  --adapter apple-silicon-m2 \
   --load-only \
   --dry-run \
   --evidence /tmp/nlboot-evidence \
   --i-understand-this-mutates-host
-
-cargo run -- execute \
-  --plan /tmp/nlboot-fixture-plan.json \
-  --cache /tmp/nlboot-cache \
-  --adapter linux-kexec \
-  --exec \
-  --dry-run \
-  --evidence /tmp/nlboot-evidence \
-  --i-understand-this-mutates-host \
-  --i-understand-this-reboots-host
 ```
 
-A real `kexec --load` path removes `--dry-run` and must run with root or equivalent capability. A real `kexec --exec` path also requires the prior load-only proof and `--i-understand-this-reboots-host`.
+A real `kexec --load` path removes `--dry-run` and must run with root or equivalent capability. A real `kexec --exec` path also requires the prior load-only proof and `--i-understand-this-reboots-host`. The Apple Silicon path is currently evidence-only dry run; real adapter behavior must be implemented in the Apple Silicon platform layer.
 
 ## Validation
 
@@ -161,6 +153,7 @@ make rust-run-fixture
 make rust-fetch-fixture
 make rust-execute-dry-run-fixture
 make rust-exec-dry-run-fixture
+make rust-apple-m2-dry-run-fixture
 ```
 
-The GitHub Actions validation lane runs Python reference validation and the Rust usable-MVP fixture path.
+The GitHub Actions validation lane runs Python reference validation and the Rust usable-MVP fixture path, including the Apple Silicon M2 adapter dry-run proof.
