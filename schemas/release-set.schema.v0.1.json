@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.srcos.ai/nlboot/release-set.schema.v0.1.json",
+  "title": "SourceOS ReleaseSet v0.1",
+  "description": "A signed SourceOS lifecycle release object binding immutable system target, user-space closures, agent-space closures, policy bundle, BOM, rollback lineage, and evidence requirements.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "releaseSetId",
+    "channel",
+    "system",
+    "userSpace",
+    "agentSpace",
+    "policy",
+    "bom",
+    "signing",
+    "rollback",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "v0.1" },
+    "kind": { "const": "ReleaseSet" },
+    "releaseSetId": { "type": "string", "pattern": "^urn:srcos:release-set:" },
+    "channel": { "type": "string", "enum": ["dev", "staging", "stable", "rescue", "rollback", "demo"] },
+    "description": { "type": "string" },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["systemPlane", "targetRef", "updateModel", "mutationPolicy"],
+      "properties": {
+        "systemPlane": { "type": "string", "enum": ["ostree-silverblue", "ostree-coreos", "nixos", "other"] },
+        "targetRef": { "type": "string" },
+        "updateModel": { "type": "string", "enum": ["ostree-rebase", "ostree-deploy", "nix-generation", "dry-run-only"] },
+        "mutationPolicy": { "type": "string", "enum": ["non-mutating", "requires-policy", "requires-human-confirmation", "recovery-only"] }
+      }
+    },
+    "userSpace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileRefs", "closureRefs"],
+      "properties": {
+        "profileRefs": { "type": "array", "items": { "type": "string" } },
+        "closureRefs": { "type": "array", "items": { "type": "string" } },
+        "experienceProfileRef": { "type": ["string", "null"] }
+      }
+    },
+    "agentSpace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileRefs", "closureRefs", "defaultIsolation"],
+      "properties": {
+        "profileRefs": { "type": "array", "items": { "type": "string" } },
+        "closureRefs": { "type": "array", "items": { "type": "string" } },
+        "defaultIsolation": { "type": "string", "enum": ["container", "vm", "layered", "microvm-mesh", "dry-run-only"] },
+        "policyCanUpgradeIsolation": { "type": "boolean", "default": true }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyBundleRef", "policyHash", "approvalRequired"],
+      "properties": {
+        "policyBundleRef": { "type": "string" },
+        "policyHash": { "type": "string" },
+        "approvalRequired": { "type": "boolean" },
+        "guardrailRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "bom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bomRef", "bomHash"],
+      "properties": {
+        "bomRef": { "type": "string" },
+        "bomHash": { "type": "string" },
+        "sbomRef": { "type": ["string", "null"] }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signerRef", "signatureRef", "signatureAlgorithm", "cryptoProfile"],
+      "properties": {
+        "signerRef": { "type": "string" },
+        "signatureRef": { "type": "string", "pattern": "^urn:srcos:signature:" },
+        "signatureAlgorithm": { "type": "string", "enum": ["rsa-pss-sha256", "ed25519", "other"] },
+        "cryptoProfile": { "type": "string", "enum": ["fips-140-3-compatible", "standard", "development"] }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previousReleaseSetRefs", "rollbackAllowed", "lastKnownGoodRequired"],
+      "properties": {
+        "previousReleaseSetRefs": { "type": "array", "items": { "type": "string" } },
+        "rollbackAllowed": { "type": "boolean" },
+        "lastKnownGoodRequired": { "type": "boolean" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["emitFingerprint", "emitVerificationRecord", "emitRollbackRecord"],
+      "properties": {
+        "emitFingerprint": { "type": "boolean" },
+        "emitVerificationRecord": { "type": "boolean" },
+        "emitRollbackRecord": { "type": "boolean" },
+        "agentPlaneEvidenceRef": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
