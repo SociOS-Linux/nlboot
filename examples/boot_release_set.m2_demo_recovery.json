@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "v0.1",
+  "kind": "BootReleaseSet",
+  "bootReleaseSetId": "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26",
+  "baseReleaseSetRef": "urn:srcos:release-set:m2-demo-2026-04-26",
+  "bootMode": "recovery",
+  "signedManifestRef": "urn:srcos:boot-manifest:m2-demo-recovery-2026-04-26",
+  "channels": [
+    "recovery",
+    "rollback",
+    "rescue"
+  ],
+  "artifacts": {
+    "kernelRef": "urn:srcos:artifact:m2-demo-recovery-kernel-sha256-0f3b6d7f",
+    "initrdRef": "urn:srcos:artifact:m2-demo-recovery-initrd-sha256-08f4c82e",
+    "rootfsRef": "urn:srcos:artifact:m2-demo-recovery-rootfs-sha256-5f4dcc3b",
+    "artifactMapRef": "examples/artifact_map.recovery.json",
+    "cachePolicyRef": "urn:srcos:nlboot-cache-policy:m2-demo-last-known-good"
+  },
+  "platformAdapters": [
+    {
+      "adapter": "apple-silicon-m2",
+      "mode": "dry-run",
+      "status": "dry-run-only",
+      "entryRefs": [
+        "urn:srcos:boot-entry:m2-demo-sourceos",
+        "urn:srcos:boot-entry:m2-demo-sourceos-recovery-installer"
+      ],
+      "requiresHostMutation": true,
+      "requiresRebootAck": false
+    },
+    {
+      "adapter": "linux-kexec",
+      "mode": "load-only",
+      "status": "implemented",
+      "entryRefs": [],
+      "requiresHostMutation": true,
+      "requiresRebootAck": true
+    }
+  ],
+  "authorization": {
+    "enrollmentTokenRequired": true,
+    "oneTimeUseRequired": true,
+    "deviceClaimRequired": true,
+    "purpose": "recover"
+  },
+  "offlineFallback": {
+    "lastKnownGoodRequired": true,
+    "allowUnsignedFallback": false,
+    "fallbackCacheRef": "urn:srcos:nlboot-cache:last-known-good:m2-demo"
+  },
+  "signing": {
+    "signerRef": "urn:srcos:key:sourceos-release-root",
+    "signatureRef": "urn:srcos:signature:m2-demo-recovery-2026-04-26",
+    "signatureAlgorithm": "rsa-pss-sha256",
+    "cryptoProfile": "fips-140-3-compatible"
+  },
+  "proofs": {
+    "emitBootPlan": true,
+    "emitFetchRecord": true,
+    "emitAdapterRecord": true,
+    "emitFingerprint": true,
+    "requiredEvidenceKinds": [
+      "BootPlan",
+      "ArtifactCacheRecord",
+      "AdapterPlanRecord",
+      "BootEntryRecord",
+      "LifecycleStateRecord"
+    ]
+  }
+}

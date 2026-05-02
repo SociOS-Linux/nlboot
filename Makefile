@@ -1,11 +1,14 @@
-.PHONY: validate test rust-check rust-test rust-run-fixture rust-fetch-fixture rust-execute-dry-run-fixture rust-exec-dry-run-fixture rust-apple-m2-dry-run-fixture
+.PHONY: validate test validate-lifecycle-contracts rust-check rust-test rust-run-fixture rust-fetch-fixture rust-execute-dry-run-fixture rust-exec-dry-run-fixture rust-apple-m2-dry-run-fixture
 
-validate: test
+validate: test validate-lifecycle-contracts
 	@echo "OK: validate"
 
 test:
 	python3 -m pip install --user pytest cryptography >/dev/null
 	PYTHONPATH=src python3 -m pytest -q
+
+validate-lifecycle-contracts:
+	python3 tools/validate_lifecycle_contracts.py
 
 rust-check:
 	cd rust/nlboot-client && cargo check
