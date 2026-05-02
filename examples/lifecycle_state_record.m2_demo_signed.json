@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "v0.1",
+  "kind": "LifecycleStateRecord",
+  "recordId": "urn:srcos:lifecycle-state-record:m2-demo-release-set-signed",
+  "capturedAt": "2026-04-26T14:35:00Z",
+  "subjectRef": "urn:srcos:control-plane:local-m2-demo",
+  "objectRef": "urn:srcos:release-set:m2-demo-2026-04-26",
+  "objectKind": "ReleaseSet",
+  "fromState": "built",
+  "toState": "signed",
+  "transition": {
+    "name": "sign",
+    "allowed": true,
+    "reason": "ReleaseSet signed by SourceOS release root for M2 demo lifecycle proof.",
+    "refusalRef": null
+  },
+  "proofs": {
+    "required": [
+      "bomHash",
+      "policyHash",
+      "signatureRef"
+    ],
+    "present": [
+      "urn:srcos:bom:m2-demo-2026-04-26",
+      "sha256:release-set-policy-demo",
+      "urn:srcos:signature:m2-demo-release-set-2026-04-26"
+    ],
+    "missing": []
+  },
+  "policy": {
+    "policyRef": "urn:srcos:policy-bundle:m2-demo-standard",
+    "policyHash": "sha256:release-set-policy-demo",
+    "approvalRequired": true,
+    "approvalRef": "urn:srcos:approval:m2-demo-release-sign"
+  },
+  "sideEffects": {
+    "hostMutation": false,
+    "diskWrite": false,
+    "reboot": false,
+    "networkFetch": false
+  }
+}
