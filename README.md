@@ -2,10 +2,11 @@
 
 `nlboot` is the SourceOS network/live/recovery boot protocol reference implementation and Rust production-client lane.
 
-This repository now contains two layers:
+This repository now contains three layers:
 
 - Python reference planner and conformance harness.
 - Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, gated Linux handoff, and Apple Silicon M2 adapter dry-run proof.
+- SourceOS lifecycle contracts for `ReleaseSet`, `BootReleaseSet`, and `LifecycleStateRecord` control-plane objects.
 
 NLBoot is not scoped to one machine. The M2 path is the first-class proof target because it is the first real machine we are proving on. The portable protocol must also support generic UEFI/iPXE, Purism/Linux-first hardware, and VM/bootstrap targets.
 
@@ -23,6 +24,7 @@ See:
 - `docs/PLATFORM_ADAPTER_MATRIX.md`
 - `docs/APPLE_SILICON_M2_ADAPTER_PLAN.md`
 - `docs/APPLE_SILICON_M2_ADAPTER_CONTRACT.md`
+- `docs/LIFECYCLE_CONTRACTS.md`
 
 ## What is implemented now
 
@@ -42,6 +44,10 @@ See:
 - Apple Silicon M2 dry-run adapter evidence path.
 - Dry-run proofs for CI and local validation.
 - Refusal records for blocked paths.
+- `ReleaseSet` lifecycle contract schema and M2 demo example.
+- `BootReleaseSet` lifecycle contract schema and M2 recovery demo example.
+- `LifecycleStateRecord` schema and signed-state transition demo example.
+- Lifecycle contract validation wired into `make validate`.
 
 ## What is still intentionally gated
 
@@ -51,7 +57,8 @@ The production client does not yet implement:
 - rollback execution;
 - real Apple Silicon boot-entry changes;
 - host repair actions;
-- persistent enrollment-secret storage.
+- persistent enrollment-secret storage;
+- website/control-plane assignment flows.
 
 Those operations are host mutation and require explicit platform adapters, evidence emission, and review.
 
@@ -92,6 +99,31 @@ Those operations are host mutation and require explicit platform adapters, evide
 - proof requirements the eventual executor must satisfy
 - offline fallback posture
 - `execute=false`
+
+## Lifecycle objects
+
+`ReleaseSet` binds the immutable SourceOS system target to user-space closures, agent-space closures, policy bundles, BOM/SBOM refs, signing refs, rollback lineage, and evidence requirements.
+
+`BootReleaseSet` binds a `ReleaseSet` to signed boot artifacts, the signed boot manifest, live/install/recovery channels, platform adapters, authorization requirements, offline fallback, signing refs, and proof requirements.
+
+`LifecycleStateRecord` records state transitions such as build, sign, assign, plan, fetch, load-only, execute, attest, evaluate compliance, and rollback.
+
+Lifecycle contracts and examples:
+
+```text
+schemas/release-set.schema.v0.1.json
+schemas/boot-release-set.schema.v0.1.json
+schemas/lifecycle-state-record.schema.v0.1.json
+examples/release_set.m2_demo.json
+examples/boot_release_set.m2_demo_recovery.json
+examples/lifecycle_state_record.m2_demo_signed.json
+```
+
+Lifecycle validation:
+
+```bash
+make validate-lifecycle-contracts
+```
 
 ## Usable MVP flow
 
@@ -147,6 +179,7 @@ A real `kexec --load` path removes `--dry-run` and must run with root or equival
 
 ```bash
 make validate
+make validate-lifecycle-contracts
 make rust-check
 make rust-test
 make rust-run-fixture
