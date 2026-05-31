@@ -1,0 +1,25 @@
+name: contract-schemas
+
+on:
+  pull_request:
+    paths:
+      - "schemas/**/*.schema.json"
+      - "tools/validate_contract_schemas.py"
+      - ".github/workflows/contract-schemas.yml"
+  push:
+    branches: [main]
+    paths:
+      - "schemas/**/*.schema.json"
+      - "tools/validate_contract_schemas.py"
+      - ".github/workflows/contract-schemas.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate contract schemas
+        run: python3 tools/validate_contract_schemas.py
