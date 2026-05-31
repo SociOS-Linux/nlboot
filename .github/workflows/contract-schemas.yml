@@ -1,6 +1,7 @@
 name: contract-schemas
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "schemas/**/*.schema.json"
