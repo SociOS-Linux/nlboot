@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - "schemas/**/*.schema.json"
+      - "fixtures/**/*.json"
       - "tools/validate_contract_schemas.py"
       - ".github/workflows/contract-schemas.yml"
   push:
     branches: [main]
     paths:
       - "schemas/**/*.schema.json"
+      - "fixtures/**/*.json"
       - "tools/validate_contract_schemas.py"
       - ".github/workflows/contract-schemas.yml"
 
