@@ -8,9 +8,19 @@ from .enrollment import (
     SessionCredential,
     issue_enrollment_token_payload,
 )
-from .protocol import BootPlan, EnrollmentToken, NlbootError, SignedBootManifest, build_boot_plan
+from .protocol import (
+    BootMenu,
+    BootMenuEntry,
+    BootPlan,
+    EnrollmentToken,
+    NlbootError,
+    SignedBootManifest,
+    build_boot_plan,
+)
 
 __all__ = [
+    "BootMenu",
+    "BootMenuEntry",
     "BootPlan",
     "DeviceClaim",
     "DeviceError",
