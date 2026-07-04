@@ -8,6 +8,20 @@ This repository now contains three layers:
 - Rust `nlboot-client` usable-MVP lane for planning, artifact fetch/cache, evidence output, gated Linux handoff, and Apple Silicon M2 adapter dry-run proof.
 - SourceOS lifecycle contracts for `ReleaseSet`, `BootReleaseSet`, and `LifecycleStateRecord` control-plane objects.
 
+The Python reference planner:
+
+- validates signed-boot-manifest-shaped objects before planning boot/recovery
+- verifies RSA-PSS/SHA-256 manifest signatures against a trusted-key document
+- validates one-time enrollment token intent, expiry, audience, and release/boot-release binding
+- produces a boot plan as JSON
+- records `execute=false` in produced plans
+- emits SourceOS control-plane metadata in boot plans:
+  - `policy_ref`
+  - `allowed_operations`
+  - `proof_requirements`
+  - `offline_fallback`
+- never downloads artifacts, writes disks, calls `kexec`, or mutates a host in this reference slice
+
 NLBoot is not scoped to one machine. The M2 path is the first-class proof target because it is the first real machine we are proving on. The portable protocol must also support generic UEFI/iPXE, Purism/Linux-first hardware, and VM/bootstrap targets.
 
 ## Stance
@@ -88,7 +102,6 @@ Those operations are host mutation and require explicit platform adapters, evide
 - matching `boot_release_set_ref`
 - purpose compatible with the boot mode
 
-`BootPlan` is emitted only after manifest verification and token validation. It includes:
 
 - the selected plan action
 - boot and release-set references
@@ -99,6 +112,8 @@ Those operations are host mutation and require explicit platform adapters, evide
 - proof requirements the eventual executor must satisfy
 - offline fallback posture
 - `execute=false`
+
+The planner is intentionally conservative. It creates an authorized plan record, not a host-mutating execution path.
 
 ## Lifecycle objects
 
@@ -123,6 +138,26 @@ Lifecycle validation:
 
 ```bash
 make validate-lifecycle-contracts
+```
+
+## M2 demo fixture
+
+The repository carries a side-effect-free M2 recovery fixture under `examples/`:
+
+- `signed_boot_manifest.recovery.json`
+- `enrollment_token.recovery.json`
+- `trusted_keys.recovery.json`
+
+Plan the M2 recovery boot through the Python reference planner:
+
+```bash
+python3 -m pip install -e .
+nlboot-plan \
+  --manifest examples/signed_boot_manifest.recovery.json \
+  --token examples/enrollment_token.recovery.json \
+  --trusted-keys examples/trusted_keys.recovery.json \
+  --require-fips \
+  --now 2026-04-26T14:35:00Z
 ```
 
 ## Usable MVP flow
