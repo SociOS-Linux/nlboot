@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "v0.1",
+  "kind": "ReleaseSet",
+  "releaseSetId": "urn:srcos:release-set:m2-demo-2026-04-26",
+  "channel": "demo",
+  "description": "M2 demo ReleaseSet binding SourceOS immutable system target, user profile closures, agent profile closures, policy, BOM, signing, rollback, and evidence requirements.",
+  "system": {
+    "systemPlane": "ostree-silverblue",
+    "targetRef": "urn:srcos:ostree-commit:m2-demo-sourceos-silverblue-gnome-2026-04-26",
+    "updateModel": "ostree-rebase",
+    "mutationPolicy": "requires-policy"
+  },
+  "userSpace": {
+    "profileRefs": [
+      "urn:srcos:experience-profile:macos-like-gnome"
+    ],
+    "closureRefs": [
+      "urn:srcos:nix-closure:user-macos-like-gnome-demo"
+    ],
+    "experienceProfileRef": "urn:srcos:experience-profile:macos-like-gnome"
+  },
+  "agentSpace": {
+    "profileRefs": [
+      "urn:srcos:agent-profile:default-devtools"
+    ],
+    "closureRefs": [
+      "urn:srcos:nix-closure:agent-default-devtools-demo"
+    ],
+    "defaultIsolation": "container",
+    "policyCanUpgradeIsolation": true
+  },
+  "policy": {
+    "policyBundleRef": "urn:srcos:policy-bundle:m2-demo-standard",
+    "policyHash": "sha256:release-set-policy-demo",
+    "approvalRequired": true,
+    "guardrailRefs": [
+      "urn:socioprophet:guardrail-fabric:sourceos-m2-demo"
+    ]
+  },
+  "bom": {
+    "bomRef": "urn:srcos:bom:m2-demo-2026-04-26",
+    "bomHash": "sha256:bom-demo",
+    "sbomRef": "urn:srcos:sbom:m2-demo-2026-04-26"
+  },
+  "signing": {
+    "signerRef": "urn:srcos:key:sourceos-release-root",
+    "signatureRef": "urn:srcos:signature:m2-demo-release-set-2026-04-26",
+    "signatureAlgorithm": "rsa-pss-sha256",
+    "cryptoProfile": "fips-140-3-compatible"
+  },
+  "rollback": {
+    "previousReleaseSetRefs": [
+      "urn:srcos:release-set:m2-demo-previous-known-good"
+    ],
+    "rollbackAllowed": true,
+    "lastKnownGoodRequired": true
+  },
+  "evidence": {
+    "emitFingerprint": true,
+    "emitVerificationRecord": true,
+    "emitRollbackRecord": true,
+    "agentPlaneEvidenceRef": "urn:socioprophet:agentplane:evidence:release-set-m2-demo"
+  }
+}

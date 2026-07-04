@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.srcos.ai/nlboot/device-claim.schema.v0.1.json",
+  "title": "SourceOS DeviceClaim v0.1",
+  "description": "An ephemeral, self-signed assertion of device identity presented at enrollment. The device generates an RSA-PSS/SHA-256 keypair locally; the SHA-256 fingerprint of the SubjectPublicKeyInfo DER is the stable device id. The claim proves possession of the matching private key over a one-time nonce. device_id MUST equal the fingerprint of public_key_pem.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "device_id",
+    "public_key_pem",
+    "nonce",
+    "claimed_at",
+    "signature_algorithm",
+    "crypto_profile",
+    "signature_hex"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "v0.1" },
+    "kind": { "const": "DeviceClaim" },
+    "device_id": {
+      "type": "string",
+      "pattern": "^urn:srcos:device:sha256:[0-9a-f]{64}$",
+      "description": "Stable device id = SHA-256 over the SubjectPublicKeyInfo DER of public_key_pem."
+    },
+    "public_key_pem": {
+      "type": "string",
+      "pattern": "BEGIN PUBLIC KEY",
+      "description": "RSA (>= 2048-bit) public key in PEM SubjectPublicKeyInfo form."
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One-time issuer-supplied value binding the claim to a single enrollment attempt."
+    },
+    "claimed_at": { "type": "string", "format": "date-time" },
+    "signature_algorithm": { "type": "string", "const": "rsa-pss-sha256" },
+    "crypto_profile": { "type": "string", "const": "fips-140-3-compatible" },
+    "signature_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]+$",
+      "description": "Hex RSA-PSS/SHA-256 self-signature over the canonical {device_id, public_key_pem, nonce, claimed_at} payload, salt length 32."
+    }
+  }
+}

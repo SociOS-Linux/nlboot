@@ -1,0 +1,14 @@
+{
+  "boot_evidence_id": "boot-evidence.fixture",
+  "service_id": "svc.managed.boot-evidence",
+  "node_id": "node.fixture",
+  "boot_release_set": "brs.fixture",
+  "measurement_refs": [
+    "measurement://fixture/nlboot"
+  ],
+  "ledger_binding": {
+    "target_service_id": "svc.platform.evidence-ledger",
+    "evidence_ledger_ref": "ledger://fixture/boot-evidence"
+  },
+  "validation_status": "pending"
+}
