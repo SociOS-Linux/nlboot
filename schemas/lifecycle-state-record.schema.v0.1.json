@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.srcos.ai/nlboot/lifecycle-state-record.schema.v0.1.json",
+  "title": "SourceOS LifecycleStateRecord v0.1",
+  "description": "A control-plane lifecycle transition record for ReleaseSet and BootReleaseSet construction, assignment, fetch, attestation, compliance, and rollback.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "recordId",
+    "capturedAt",
+    "subjectRef",
+    "objectRef",
+    "objectKind",
+    "fromState",
+    "toState",
+    "transition",
+    "proofs",
+    "policy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "v0.1" },
+    "kind": { "const": "LifecycleStateRecord" },
+    "recordId": { "type": "string", "pattern": "^urn:srcos:lifecycle-state-record:" },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "subjectRef": { "type": "string", "description": "Device, user, project, group, org, or control-plane actor ref." },
+    "objectRef": { "type": "string" },
+    "objectKind": { "type": "string", "enum": ["ReleaseSet", "BootReleaseSet", "SignedBootManifest", "EnrollmentToken", "BootPlan", "ArtifactCacheRecord", "AdapterRecord", "Fingerprint"] },
+    "fromState": { "type": ["string", "null"], "enum": ["draft", "resolved", "built", "signed", "assigned", "planned", "fetched", "loaded", "executed", "attested", "compliant", "noncompliant", "rollback-available", "rolled-back", "blocked", null] },
+    "toState": { "type": "string", "enum": ["draft", "resolved", "built", "signed", "assigned", "planned", "fetched", "loaded", "executed", "attested", "compliant", "noncompliant", "rollback-available", "rolled-back", "blocked"] },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "allowed", "reason"],
+      "properties": {
+        "name": { "type": "string", "enum": ["resolve-bom", "build", "sign", "assign", "validate-token", "plan", "fetch", "load-only", "execute", "attest", "evaluate-compliance", "mark-rollback-available", "rollback", "refuse"] },
+        "allowed": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "refusalRef": { "type": ["string", "null"] }
+      }
+    },
+    "proofs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "present"],
+      "properties": {
+        "required": { "type": "array", "items": { "type": "string" } },
+        "present": { "type": "array", "items": { "type": "string" } },
+        "missing": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyRef", "policyHash", "approvalRequired"],
+      "properties": {
+        "policyRef": { "type": "string" },
+        "policyHash": { "type": "string" },
+        "approvalRequired": { "type": "boolean" },
+        "approvalRef": { "type": ["string", "null"] }
+      }
+    },
+    "sideEffects": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostMutation": { "type": "boolean", "default": false },
+        "diskWrite": { "type": "boolean", "default": false },
+        "reboot": { "type": "boolean", "default": false },
+        "networkFetch": { "type": "boolean", "default": false }
+      }
+    }
+  }
+}

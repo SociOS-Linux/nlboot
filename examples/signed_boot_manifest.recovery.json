@@ -1,16 +1,16 @@
 {
-  "manifest_id": "urn:srcos:boot-manifest:m2-demo-recovery-2026-04-26",
-  "boot_release_set_id": "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26",
-  "base_release_set_ref": "urn:srcos:release-set:m2-demo-2026-04-26",
-  "boot_mode": "recovery",
   "artifacts": {
-    "kernel_ref": "urn:srcos:artifact:m2-demo-recovery-kernel-sha256-0f3b6d7f",
     "initrd_ref": "urn:srcos:artifact:m2-demo-recovery-initrd-sha256-08f4c82e",
+    "kernel_ref": "urn:srcos:artifact:m2-demo-recovery-kernel-sha256-0f3b6d7f",
     "rootfs_ref": "urn:srcos:artifact:m2-demo-recovery-rootfs-sha256-5f4dcc3b"
   },
+  "base_release_set_ref": "urn:srcos:release-set:m2-demo-2026-04-26",
+  "boot_mode": "recovery",
+  "boot_release_set_id": "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26",
+  "crypto_profile": "fips-140-3-compatible",
+  "manifest_id": "urn:srcos:boot-manifest:m2-demo-recovery-2026-04-26",
+  "signature_algorithm": "rsa-pss-sha256",
   "signature_ref": "urn:srcos:signature:m2-demo-recovery-2026-04-26",
   "signer_ref": "urn:srcos:key:sourceos-release-root",
-  "signature_algorithm": "rsa-pss-sha256",
-  "crypto_profile": "fips-140-3-compatible",
   "signature_hex": "56e76990dbbed93973e40284129249f61fb3c257e62c3b84a058a735a8ecb35a4abd8544144baf4437dd9e59123073d6005cf8b9cc0011aa16f25d4c6bbc48d1a6f9741d0c848262623c38dedc97457101f27b4ac22d854f91be4061e028024760136dfffe65293ea7bd4e2bc393be7f912f0d69eec72bfd92651b6924e37f1a1c4108bba99f322d5e0bf85581f540048e0eeb565ec71d8335139c3eb3a8f0b4f68a80e9e9ddc526de9017c8e6d0ab8d854755bfde2e36aedbc42e1885bca8124bb253f098116d2fae26657da5be6474305e765d71df2905ff82cd7465687b9c78827ecfb1e647a32c1c72716a3636de41e99f15959757fb03cd770dc5bb7e17"
 }

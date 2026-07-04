@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "apple-silicon-m2-adapter-plan.v1",
+  "adapterPlanId": "urn:srcos:adapter-plan:apple-silicon-m2:m2-demo-recovery-2026-04-26",
+  "adapter": "apple-silicon-m2",
+  "mode": "recovery-entry-dry-run",
+  "dryRun": true,
+  "mutationPerformed": false,
+  "bootReleaseSetId": "urn:srcos:boot-release-set:m2-demo-recovery-2026-04-26",
+  "releaseSetRef": "urn:srcos:release-set:m2-demo-2026-04-26",
+  "entries": [
+    {
+      "id": "sourceos-normal",
+      "label": "SourceOS",
+      "role": "normal",
+      "visibleInBootOptions": true,
+      "mutationPerformed": false
+    },
+    {
+      "id": "sourceos-recovery-installer",
+      "label": "SourceOS Recovery/Installer",
+      "role": "recovery-installer",
+      "visibleInBootOptions": true,
+      "mutationPerformed": false
+    }
+  ],
+  "requiredProofs": [
+    "adapter-plan-record",
+    "boot-entry-record",
+    "verification-record",
+    "refusal-record-on-block"
+  ],
+  "notes": [
+    "M2 is first-class proof target, not product boundary.",
+    "This fixture represents intended boot option records only; it does not mutate host boot configuration.",
+    "Real host changes must be implemented through the Apple Silicon platform adapter with explicit policy and evidence gates."
+  ]
+}

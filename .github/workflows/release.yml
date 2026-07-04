@@ -1,0 +1,153 @@
+name: nlboot release
+
+on:
+  push:
+    tags:
+      - "nlboot-client-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build nlboot-client (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          cache: false
+
+      - name: Install cross linker for aarch64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Configure aarch64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          mkdir -p rust/nlboot-client/.cargo
+          cat > rust/nlboot-client/.cargo/config.toml <<'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Run validation on native target
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          make validate
+          make rust-check
+          make rust-test
+          make rust-run-fixture
+          make rust-fetch-fixture
+          make rust-execute-dry-run-fixture
+          make rust-exec-dry-run-fixture
+          make rust-apple-m2-dry-run-fixture
+
+      - name: Generate dependency lock for release build
+        run: cd rust/nlboot-client && cargo generate-lockfile
+
+      - name: Build release binary
+        run: cd rust/nlboot-client && cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Prepare release manifest and SBOM
+        run: |
+          VERSION="${GITHUB_REF_NAME:-manual}"
+          TARGET="${{ matrix.target }}"
+          mkdir -p dist/${TARGET}
+          cp rust/nlboot-client/target/${TARGET}/release/nlboot-client dist/${TARGET}/
+          cp rust/nlboot-client/Cargo.lock dist/${TARGET}/Cargo.lock
+          cp README.md docs/RELEASE_AND_INSTALL.md dist/${TARGET}/
+          cd rust/nlboot-client
+          cargo metadata --locked --format-version 1 > ../../dist/${TARGET}/cargo-metadata.json
+          cd ../..
+          python3 tools/cargo_metadata_to_spdx.py \
+            dist/${TARGET}/cargo-metadata.json \
+            dist/${TARGET}/sbom.spdx.json \
+            --document-name "nlboot-client-${VERSION}-${TARGET}-sbom"
+          cp dist/${TARGET}/sbom.spdx.json "nlboot-client-${VERSION}-${TARGET}-sbom.spdx.json"
+          sha256sum "nlboot-client-${VERSION}-${TARGET}-sbom.spdx.json" > "nlboot-client-${VERSION}-${TARGET}-sbom.spdx.json.sha256"
+          cat > dist/${TARGET}/release-manifest.json <<EOF
+          {
+            "artifact": "nlboot-client",
+            "version": "${VERSION}",
+            "target": "${TARGET}",
+            "commit": "${GITHUB_SHA}",
+            "sourceRepository": "${GITHUB_REPOSITORY}",
+            "validation": [
+              "make validate",
+              "make rust-check",
+              "make rust-test",
+              "make rust-run-fixture",
+              "make rust-fetch-fixture",
+              "make rust-execute-dry-run-fixture",
+              "make rust-exec-dry-run-fixture",
+              "make rust-apple-m2-dry-run-fixture"
+            ],
+            "hostMutationDefault": "refuse-unless-explicitly-acknowledged",
+            "appleSiliconAdapter": "dry-run-evidence-only",
+            "cargoLockIncluded": true,
+            "dependencyMetadataIncluded": true,
+            "sbomIncluded": true
+          }
+          EOF
+
+      - name: Package archive
+        run: |
+          VERSION="${GITHUB_REF_NAME:-manual}"
+          ARCHIVE="nlboot-client-${VERSION}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C dist/${{ matrix.target }} .
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Attest archive provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: nlboot-client-*.tar.gz
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlboot-client-${{ matrix.target }}
+          path: |
+            nlboot-client-*.tar.gz
+            nlboot-client-*.tar.gz.sha256
+            nlboot-client-*-sbom.spdx.json
+            nlboot-client-*-sbom.spdx.json.sha256
+
+  publish:
+    name: Publish release artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release payload
+        run: |
+          find artifacts -type f -name '*.tar.gz' -exec cp {} . \;
+          find artifacts -type f -name '*sbom.spdx.json' -exec cp {} . \;
+          find artifacts -type f -name '*.sha256' -exec cp {} . \;
+          cat *.sha256 > SHA256SUMS
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            nlboot-client-*.tar.gz
+            nlboot-client-*.tar.gz.sha256
+            nlboot-client-*-sbom.spdx.json
+            nlboot-client-*-sbom.spdx.json.sha256
+            SHA256SUMS

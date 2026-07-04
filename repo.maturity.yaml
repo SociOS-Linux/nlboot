@@ -1,0 +1,34 @@
+schemaVersion: repo-maturity.v1
+repository: SociOS-Linux/nlboot
+plane: sourceos-carry
+status: active
+canonicality: canonical
+owners:
+  - SociOS-Linux
+maturity:
+  level: M2
+  targetLevel: M3
+  evidence:
+    - README.md describes the safe planning core and protocol objects.
+    - examples/ contains M2 recovery fixtures.
+    - make validate exists and exercises the safe planner path.
+validation:
+  commands:
+    - make validate
+  ciRequired: true
+  lastKnownStatus: unknown
+integrations:
+  - repository: SourceOS-Linux/sourceos-spec
+    relationship: should consume normative ReleaseSet, BootReleaseSet, TokenDoor, and Fingerprint schemas
+    required: true
+  - repository: SourceOS-Linux/sourceos-boot
+    relationship: implementation-facing boot/recovery integration consumer
+    required: true
+  - repository: SocioProphet/sociosphere
+    relationship: estate maturity ingestion and evidence reporting
+    required: true
+nextActions:
+  - Align nlboot protocol names with SourceOS BootReleaseSet schemas.
+  - Add boot-proof fixture and negative token/manifest tests if missing.
+  - Keep planner conservative until verified artifact fetch and host mutation gates are specified.
+  - Enable GitHub Issues if Codex/Copilot issue dispatch should be used directly.
